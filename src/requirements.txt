@@ -1,0 +1,9 @@
+numpy>=1.22
+pandas>=2
+Pillow>=9.1.1
+tqdm>=4
+matplotlib>=3.5
+seaborn>=0.13
+torch==2.2.2
+torchvision==0.17.2
+zennit==0.5.0

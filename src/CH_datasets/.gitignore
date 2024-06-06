@@ -1,0 +1,8 @@
+*.gz
+*.pdf
+*.eps
+.python
+*.egg-info
+__pycache__
+.venv
+/.idea
