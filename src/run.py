@@ -63,9 +63,9 @@ def get_refiner_class(refinement_name: str):
     elif refinement_name == "pcaegem":
         return partial(EGEMRefiner, do_pca=True)
     elif refinement_name == "pegem":
-        return partial(PEGEMRefiner, binary_mask=False)
+        return partial(PEGEMRefiner, hard_pruning=False)
     elif refinement_name == "pep":
-        return partial(PEGEMRefiner, binary_mask=True)
+        return partial(PEGEMRefiner, hard_pruning=True)
     elif refinement_name == "pcatrunc":
         return PCATruncRefiner
     elif refinement_name == "wegem":

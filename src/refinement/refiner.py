@@ -250,7 +250,9 @@ class EGEMRefiner(StaticRefiner):
                     l_i / ((len(layers) - 1) if len(layers) > 1 else 1)
                 )
             elif self.scaling_rule == "inverse-triangular":
-                threshold = self.alpha + (1 - self.alpha) * (l_i / ((len(layers) - 1) if len(layers) > 1 else 1))
+                threshold = self.alpha + (1 - self.alpha) * (
+                    l_i / ((len(layers) - 1) if len(layers) > 1 else 1)
+                )
             elif self.scaling_rule == "flat":
                 threshold = self.alpha
             else:
@@ -686,7 +688,7 @@ class PEGEMRefiner(StaticRefiner):
         collapse_start: bool = False,
         top_n_pruning: Optional[int] = None,  # Not implemented
         per_class_mask: bool = True,
-        binary_mask: bool = True,
+        hard_pruning: bool = True,
         mask_dtype=torch.float16,
         **kwargs,
     ):
@@ -702,11 +704,11 @@ class PEGEMRefiner(StaticRefiner):
         self.collapse_start = collapse_start
         self.top_n_pruning = top_n_pruning
         self.per_class_mask = per_class_mask
-        self.binary_mask = binary_mask
+        self.hard_pruning = hard_pruning
         self.mask_dtype = mask_dtype
 
-        assert (lmbda is not None and not binary_mask) or (
-            percent_pruned is not None and binary_mask
+        assert (lmbda is not None and not hard_pruning) or (
+                percent_pruned is not None and hard_pruning
         )
 
         # Find the start and end modules
@@ -742,24 +744,36 @@ class PEGEMRefiner(StaticRefiner):
             return inputs[0] * gradients[0]
 
         hook = BasicHook(
-            # input_modifiers=[lambda input: input],
-            # param_modifiers=[lambda param, _: param],
-            # output_modifiers=[lambda output: output],
             gradient_mapper=grad_mapper,  # (lambda out_grad, outputs: [out_grad / outputs[0]]),
             reducer=reducer,
         )
         return hook
 
-    def calc_path_fan(self, x, y, selector=None, y_vals=None, abs_r=False):
-        def store_hook(module, input, output):
+    def _calculate_sensitivity(self, r_mat, em_a):
+        if len(r_mat.shape) == 5:
+            # TODO: adapt to conv em
+            em_a = em_a.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
+        elif len(r_mat.shape) == 4:
+            em_a = em_a.unsqueeze(-1).unsqueeze(-1)
+        elif len(r_mat.shape) == 3:
+            em_a = em_a.unsqueeze(-1)
+        else:
+            print("Warning: Unsupported shape for r_mat", r_mat.shape)
+            print("em_a", em_a.shape)
+        print("r_mat", r_mat.shape, "em_a", em_a.shape)
+        s_mat = torch.mean(
+                (r_mat / (em_a + (em_a == 0))), dim=0, keepdim=True
+        ).detach()
+        return s_mat
+
+    def calc_path_fan(self, x, y, selector=None, y_vals=None, abs_r=False, return_sensitivity=False):
+        def sm_store_hook(module, input, output):
             module.output = output
             output.retain_grad()
 
         def em_store_hook(module, input, output):
             module.output = output
 
-        # for param in self.model.parameters():
-        #    param.grad = None
         self.model.zero_grad()
 
         if selector is not None:
@@ -767,8 +781,9 @@ class PEGEMRefiner(StaticRefiner):
             handle = hook.register(self.em)
 
         with self.explainer.attributor:
-            store_handle = self.sm.register_forward_hook(store_hook)
-            em_store_handle = self.em.register_forward_hook(em_store_hook)
+            sm_store_handle = self.sm.register_forward_hook(sm_store_hook)
+            if return_sensitivity:
+                em_store_handle = self.em.register_forward_hook(em_store_hook)
 
             to_explain = torch.eye(self.n_classes, device=self.device, dtype=torch.int)[
                 [y]
@@ -779,15 +794,17 @@ class PEGEMRefiner(StaticRefiner):
             out, _ = self.explainer.attributor(x, to_explain)
             out = out.detach()
             relevance = self.sm.output.grad.to(self.mask_dtype).clone().detach()
-            em_out = self.em.output.to(self.mask_dtype).clone().detach()
+            if return_sensitivity:
+                em_out = self.em.output.to(self.mask_dtype).clone().detach()
 
         if abs_r:
             relevance = torch.abs(relevance)
 
-        em_store_handle.remove()
-        self.em.output = None
-        store_handle.remove()
+        sm_store_handle.remove()
         self.sm.output = None
+        if return_sensitivity:
+            em_store_handle.remove()
+            self.em.output = None
 
         if selector is not None:
             handle.remove()
@@ -798,21 +815,26 @@ class PEGEMRefiner(StaticRefiner):
         if self.collapse_start and len(relevance.shape) > 3:
             relevance = torch.sum(relevance, dim=[-2, -1], keepdim=True)
 
-        return out, relevance, em_out
+        sensitivity = None
+        if return_sensitivity:
+            sensitivity =self._calculate_sensitivity(relevance, em_out)
+
+        return out, relevance, sensitivity
 
     def calc_path_matrix(
         self,
         layer_names: List[str],
         loader: DataLoader,
         path_head_selector=None,
-        return_em_activations=False,
+        return_sensitivity=False,
         explain_1=True,
         abs_r=False,
     ) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
+
         assert len(layer_names) == 2, "Need exactly two layers for PEGEM."
 
-        r_matrix = None  # n_samples x out_neurons x in_shape
-        em_activations = None
+        r_matrix = None  # n_samples x end_neurons x start_shape
+        em_activations = None  # n_samples x end_neurons
         outs = torch.empty(
             len(loader.dataset), self.n_classes, device=self.device
         )  # n_samples x outputs
@@ -820,6 +842,7 @@ class PEGEMRefiner(StaticRefiner):
             len(loader.dataset), device=self.device, dtype=torch.int
         )  # n_samples
 
+        # Collect relevances for all refinement samples
         sample_cnt = 0
         for x, y in tqdm.tqdm(loader):
             x = x.to(self.device)
@@ -830,31 +853,27 @@ class PEGEMRefiner(StaticRefiner):
             n_in_batch = len(x)
             do_batch_init = True
 
+            # Block all but one end neuron at a time to collect relevance path fans
             for n in range(self.n_end_neurons):
-                selector.fill_(0)
-                selector[n] = 1
-
                 if path_head_selector is not None and not path_head_selector[n]:
+                    # Don't evaluate paths for unselected end neurons
                     continue
                 if self.end_is_out and n != y:
                     # Only do one explanation pass for each output neuron if end-layer = output-layer
                     continue
 
+                selector.fill_(0)
+                selector[n] = 1
+
                 if explain_1:
                     # Back-propagate an output value of 1
-                    out, relevance, em_out = self.calc_path_fan(
-                        x, y, selector, abs_r=abs_r
-                    )
+                    y_vals = None
                 else:
                     # Back-propagate the output at its own value
                     with torch.no_grad():
                         out = self.model(x)
-                        y_vals = out[torch.arange(out.size(0)), y].unsqueeze(
-                            1
-                        )  # n_samples x 1
-                    _, relevance, em_out = self.calc_path_fan(
-                        x, y, selector, y_vals=y_vals, abs_r=abs_r
-                    )
+                        y_vals = out[torch.arange(out.size(0)), y].unsqueeze(1)  # n_samples x 1
+                out, relevance, sensitivity = self.calc_path_fan(x, y, selector, y_vals=y_vals, abs_r=abs_r, return_sensitivity=return_sensitivity)
 
                 if do_batch_init:
                     if r_matrix is None:
@@ -862,29 +881,24 @@ class PEGEMRefiner(StaticRefiner):
                         r_matrix = torch.zeros(
                             (
                                 len(loader.dataset),
-                                self.n_end_neurons, # TODO adapt to conv layer
+                                self.n_end_neurons,  # TODO adapt to conv layer
                                 *relevance.shape[1:],
                             ),
                             device=self.device,
                             dtype=self.mask_dtype,
                         )
-                        if return_em_activations:
-                            em_activations = torch.zeros(
-                                (len(loader.dataset), *em_out.shape[1:]),
-                                device=self.device,
-                                dtype=self.mask_dtype,
-                            )
-                    do_batch_init = False
+                        if return_sensitivity:
+                            s_matrix = torch.zeros_like(r_matrix)
                     outs[sample_cnt : (sample_cnt + n_in_batch)] = out.detach()
                     ys[sample_cnt : (sample_cnt + n_in_batch)] = y
+                    do_batch_init = False
                 r_matrix[sample_cnt : (sample_cnt + n_in_batch), n] = relevance
-                if return_em_activations:
-                    em_activations[
-                        sample_cnt : (sample_cnt + n_in_batch)
-                    ] = em_out.detach()
+                if return_sensitivity:
+                    s_matrix[sample_cnt: (sample_cnt + n_in_batch), n] = sensitivity
+
             sample_cnt += n_in_batch
 
-        return r_matrix, em_activations, outs, ys
+        return r_matrix, s_matrix, outs, ys
 
     def _extract_values(self, layer_names: List[str], loader: DataLoader) -> Dict:
         was_training = False
@@ -892,19 +906,20 @@ class PEGEMRefiner(StaticRefiner):
             self.model.eval()
             was_training = True
 
-        r_matrix, em_activations, _, ys = self.calc_path_matrix(
+        r_matrix, s_matrix, _, ys = self.calc_path_matrix(
             layer_names,
             loader,
-            return_em_activations=not self.binary_mask,
+            return_sensitivity=not self.hard_pruning,
             explain_1=True,
             abs_r=True,
+                #TODO implement aggregate -> per class and not
         )
 
         if was_training:
             self.model.train()
 
         self.mods["r_matrix"] = r_matrix.detach()  # For analysis only
-        self.mods["em_activations"] = em_activations  # For analysis only
+        self.mods["s_matrix"] = s_matrix.detach()  # For analysis only
         print("Refinement mat shape", r_matrix.shape)
         print("  Has Nan", torch.isnan(r_matrix).any().item())
         print("  Nr. > 0", torch.sum(r_matrix > 0).item(), "total", r_matrix.numel())
@@ -945,48 +960,26 @@ class PEGEMRefiner(StaticRefiner):
                 plt.title("Path relevance histogram")
                 plt.show()
 
-        if self.binary_mask:
-            aggregator = lambda r_mat, em_a: torch.mean(r_mat, dim=0, keepdim=True)
+        if self.hard_pruning:
+            aggregator = lambda r_mat, s_mat: torch.mean(r_mat, dim=0, keepdim=True)
         else:
-
-            def _agg(r_mat, em_a):
-                if len(r_mat.shape) == 5:
-                    # TODO: adapt to conv em
-                    em_a = em_a.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
-                elif len(r_mat.shape) == 4:
-                    em_a = em_a.unsqueeze(-1).unsqueeze(-1)
-                elif len(r_mat.shape) == 3:
-                    em_a = em_a.unsqueeze(-1)
-                else:
-                    print("Warning: Unsupported shape for r_mat", r_mat.shape)
-                    print("em_a", em_a.shape)
-                r2 = torch.mean(r_mat**2, dim=0, keepdim=True)
-                print("r2", r2.shape, "r_mat", r_mat.shape, "em_a", em_a.shape)
-                s2 = torch.mean(
-                    (r_mat / (em_a + (em_a == 0))) ** 2, dim=0, keepdim=True
-                )
+            def aggregator(r_mat, s_mat):
+                r2 = torch.mean(r_mat ** 2, dim=0, keepdim=True)
+                s2 = torch.mean(s_mat ** 2, dim=0, keepdim=True)
                 multiplier = r2 / (r2 + (r2 == 0) + self.lmbda * s2)
                 return multiplier
 
-            aggregator = lambda r_mat, em_a: _agg(r_mat, em_a)
-
         if self.per_class_mask:
-            if em_activations is None:
-                r_matrix = {
-                    i: aggregator(r_matrix[[ys == i]], None)
-                    for i in range(self.n_classes)
-                }
-            else:
-                r_matrix = {
-                    i: aggregator(r_matrix[[ys == i]], em_activations[[ys == i]])
-                    for i in range(self.n_classes)
-                }
+            r_matrix = {
+                i: aggregator(r_matrix[[ys == i]], s_matrix[[ys == i]] if s_matrix is not None else None)
+                for i in range(self.n_classes)
+            }
         else:
-            r_matrix = aggregator(r_matrix, em_activations)
+            r_matrix = aggregator(r_matrix, s_matrix)
         return {"r_matrix": r_matrix}
 
     def _matrix_to_mask(self, r_matrix):
-        if self.binary_mask:
+        if self.hard_pruning:
             if self.percent_pruned == 0:
                 mask = torch.ones_like(r_matrix, dtype=bool)
             else:
@@ -1064,7 +1057,7 @@ class PEGEMRefiner(StaticRefiner):
                     # iterate over n instead of classes
 
                 path_head_selector = None
-                if not self.per_class_mask and self.binary_mask:
+                if not self.per_class_mask and self.hard_pruning:
                     path_head_selector = (
                         mask.reshape([mask.shape[1], -1]).sum(dim=-1) > 0
                     )
@@ -1076,7 +1069,7 @@ class PEGEMRefiner(StaticRefiner):
 
                     if self.per_class_mask:
                         cls_mask = mask[y]
-                        if self.binary_mask:
+                        if self.hard_pruning:
                             path_head_selector = (
                                 cls_mask.reshape([cls_mask.shape[1], -1]).sum(dim=-1)
                                 > 0
@@ -1126,4 +1119,4 @@ class PEGEMRefiner(StaticRefiner):
             self.model.forward = self.old_forward
 
     def get_filename(self) -> str:
-        return f"pegem_bin{self.binary_mask}_p{self.percent_pruned}_cs{self.collapse_start}_{str(self.layer_names).replace(' ','')}_pca{self.pca_dims}.pkl"
+        return f"pegem_bin{self.hard_pruning}_p{self.percent_pruned}_cs{self.collapse_start}_{str(self.layer_names).replace(' ', '')}_pca{self.pca_dims}.pkl"
