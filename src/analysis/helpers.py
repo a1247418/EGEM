@@ -94,7 +94,7 @@ def load_all_results(directory: str, filter_str: Union[List[str], str] = None, a
                 try:
                     row.append(r[c][0] if "top1" in c else r[c])
                 except KeyError as e:
-                    print(repr(e))
+                    print(repr(e) + f" for {r['refinement']}")
                     row.append(None)
             rows.append(row)
 

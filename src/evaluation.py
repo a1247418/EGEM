@@ -44,12 +44,12 @@ def _calculate_confusion_matrix(predictions: Array, ground_truth: Array, num_cla
     return confusion_matrix
 
 
-def evaluate(model, data_loader, device: str = "cuda"):
+def evaluate(model, data_loader, device: str = "cuda", verbose=False):
     was_training = False
     if model.training:
         model.eval()
         was_training = True
-    print(torch.cuda.memory_allocated() / 1024 ** 2, "MB used before evaluation.")
+    if verbose: print(torch.cuda.memory_allocated() / 1024 ** 2, "MB used before evaluation.")
     all_y = []
     all_y_hat = []
     for i, (x, y) in enumerate(tqdm(data_loader)):
@@ -60,17 +60,17 @@ def evaluate(model, data_loader, device: str = "cuda"):
         all_y_hat.append(y_hat)
         all_y.append(y)
         # print the used gpu memory
-        print(torch.cuda.memory_allocated() / 1024 ** 2, "MB used at iteration", i)
+        if verbose: print(torch.cuda.memory_allocated() / 1024 ** 2, "MB used at iteration", i)
 
 
     all_y = torch.concat(all_y, dim=0).cpu().detach()
     all_y_hat = torch.concat(all_y_hat, dim=0).cpu().detach()
 
-    print(torch.cuda.memory_allocated() / 1024 ** 2, "MB used after evaluation.")
+    if verbose: print(torch.cuda.memory_allocated() / 1024 ** 2, "MB used after evaluation.")
 
     # measure accuracy
     pred, correct, acc1 = _accuracy(all_y_hat, all_y, topk=(1,))
-    print("\ttop-1 acc:", acc1)
+    # print("\ttop-1 acc:", acc1)
     top1 = acc1
     pred = pred
     true = all_y.squeeze().numpy()
@@ -92,7 +92,7 @@ def evaluate(model, data_loader, device: str = "cuda"):
     if was_training:
         model.train()
 
-    print(torch.cuda.memory_allocated() / 1024 ** 2, "MB used after metrics calculation.")
+    if verbose: print(torch.cuda.memory_allocated() / 1024 ** 2, "MB used after metrics calculation.")
 
     return to_return
 
@@ -119,6 +119,21 @@ def get_balanced_data(n_shot: int, n_classes: int, loader, device: str = "cuda")
                     break
             if stop:
                 break
+
+    for c, n_c in n_per_class.items():
+        if n_c < n_shot:
+            if n_c == 0:
+                raise ValueError(f"Insufficient data for eval with {n_shot} samples per class: only {n_c} samples for class {c}")
+            else:
+                # up-sample by randomly adding samples from the same class
+                n_missing = n_shot - n_c
+                c_idxs = [i for i, t in enumerate(targets) if t == c]
+                c_idxs = np.random.choice(c_idxs, n_missing, replace=True)
+                for c_i in c_idxs:
+                    imgs.append(imgs[c_i])
+                    targets.append(targets[c_i])
+                n_per_class[c] = n_shot
+
     imgs = torch.cat(imgs, dim=0)
     targets = torch.cat(targets, dim=0)
     return imgs, targets

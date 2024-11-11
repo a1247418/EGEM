@@ -8,6 +8,7 @@ import numpy as np
 import pickle as pkl
 from torch.utils.data import DataLoader, TensorDataset
 from functools import partial
+from typing import Optional
 
 from evaluation import get_n_shot_data, evaluate
 from refinement.refiner import (
@@ -18,8 +19,10 @@ from refinement.refiner import (
     RegressionRefiner,
     PEGEMRefiner
 )
+from refinement.helpers import (get_activations, calculate_sensitivity)
+from refinement.decomposition.decomposer import (IdentityDecomposer, PCADecomposer, PRCADecomposer, DRSADecomposer)
 from models.model_loading import load_model
-from experiment_config import get_experiment_config, get_refinement_hyperparams
+from experiment_config import get_experiment_config, get_refinement_hyperparams, get_decomposition_config
 from refinement.explainer import Explainer
 from data.data_loading import load_scenario
 
@@ -35,7 +38,7 @@ def parseargs():
         type=str,
         default="none",
         choices=["none", "egem", "pcaegem", "ridge", "pcatrunc", "wegem", "pegem", "pep"],
-    )  # TODO implement
+    )
     aa("--scenario_name", type=str)
     aa("--data_root", type=str)
     aa("--refinement_path", type=str, default=None)
@@ -50,6 +53,8 @@ def parseargs():
         choices=["none", "uniform", "targeted", "adversarial"],
     )
     aa("--model", type=str, default=None)
+    aa("--explanation_type", type=str, default="epsilon_alpha2_beta1_flat")
+    aa("--decomposition_type", type=str, default="none")
     aa("--layer_names", type=str, nargs="+", default=None)
     aa("--subfolder", type=str, default=None)
     aa("--skip_existing", action="store_true")
@@ -102,19 +107,79 @@ def get_data_loaders(scenario_name, data_root, exp):
     return train_loader, refine_loader, test_loader
 
 
-def get_explainer(model, n_classes, exp):
+def get_explainer(model, n_classes, exp, zero_params="bias"):
+    canonizer_name = "vgg" if "vgg" in exp["model_name"] else "resnet" if "resnet" in exp["model_name"] else None
     explainer = Explainer(
             model,
             n_classes=n_classes,
             explanation_type=exp["explanation_type"],
-            canonizer="vgg"
-            if "vgg" in exp["model_name"]
-            else "resnet"
-            if "resnet" in exp["model_name"]
-            else None,
-            sensitivity_only=False if exp["explanation_type"] == "gradient" else True,
+            canonizer=canonizer_name,
+            zero_params=zero_params
     )
     return explainer
+
+
+def get_decomposer(dec_name: str,
+                   dec_config: dict,
+                   layer_name: Optional[str] = None,
+                   model: Optional = None,
+                   explainer: Optional = None,
+                   data_loader: Optional[torch.utils.data.DataLoader] = None,
+                   path: Optional[str] = None,
+                   device: str = "cuda"):
+    dec_map = {dc.__name__.lower().replace("decomposer", ""): dc for dc in
+               [IdentityDecomposer, PCADecomposer, PRCADecomposer, DRSADecomposer]}
+    if dec_name not in dec_map:
+        raise ValueError(f"Unknown decomposer: {dec_name}, pick one of {[str(k) for k in dec_map.keys()]}.")
+    dec_cls = dec_map[dec_name]
+
+    explainer_needed = dec_name in ["prca", "drsa"]
+
+    is_loaded = False
+    if path is not None:
+        # Try loading the decomposer
+        try:
+            dec = dec_cls(**dec_config, load_path=path)
+            is_loaded = True
+        except FileNotFoundError:
+            print("No matching decomposer found at", path)
+    if not is_loaded:
+        # Extract values to decompose
+        assert model is not None
+        assert data_loader is not None
+        assert layer_name is not None
+        if explainer_needed:
+            assert explainer is not None
+
+        extracted = get_activations(
+                model=model,
+                layer_names=[layer_name],
+                loader=data_loader,
+                do_pca=False,
+                cls_token_only=False,
+                average_tokens=False,
+                square=False,
+                reduce=False,
+                batch_dim=0,
+                capture_outputs=True,
+                device=device,
+                explainer=explainer if explainer_needed else None,
+                reduce_spatial=False
+        )
+        A = torch.cat(extracted[0])
+        data_args = {"data": A}
+        if explainer_needed:
+            R = torch.cat(extracted[1])
+            S = calculate_sensitivity(R, A)
+            data_args.update({"data_context": S})
+
+        # Train decomposer
+        dec = dec_cls(**data_args, **dec_config)
+
+        if path is not None:
+            dec.save(path)
+
+    return dec
 
 
 def run_experiment(
@@ -145,13 +210,19 @@ def run_experiment(
     # Overwrite with provided params
     for k, v in kwargs.items():
         if k in exp:
-            exp[k] = v
+            if not (k=="layer_names" and v is None):
+                print(f"Overwriting default '{k}' with {v} (user input)")
+                exp[k] = v
         else:
             raise ValueError(f"Invalid argument {k}")
 
     if refiner_kwargs is not None:
-        loaded_refiner_kwargs = json.loads(refiner_kwargs)
+        if type(refiner_kwargs)==str:
+            loaded_refiner_kwargs = json.loads(refiner_kwargs)
+        else:
+            loaded_refiner_kwargs = refiner_kwargs
     else:
+        refiner_kwargs = {}
         loaded_refiner_kwargs = {}
 
     model = load_model(
@@ -213,41 +284,86 @@ def run_experiment(
                 tensor_refine_dataset, batch_size=min(n_ref, exp["batch_size"])
             )
 
+        # Set explainer
+        explainer = None
+        if exp["explanation_type"] is not None:
+            explainer = get_explainer(model, n_classes, exp)
+            if verbose and not "vit" in exp["model_name"]:
+                # TODO: Remove in final version
+                print(f"Plotting {exp['explanation_type']} explanation for a few examples")
+                for i in range(3):
+                    with explainer.attributor:
+                        out, r = explainer.attributor(tensor_x[i:(i+1)], torch.eye(n_classes, device="cuda",
+                                                                        dtype=torch.int)[[tensor_y[i:(i+1)]]])
+                    fig, axs = plt.subplots(1, 2)
+                    axs[0].imshow(torch.permute(tensor_x[i], (1, 2, 0)).cpu().numpy())
+
+                    if scenario_name != "mnist-8":
+                        r = torch.sum(r, dim=1, keepdim=True)
+
+                    mnx = max(-torch.min(r), torch.max(r))
+                    axs[1].imshow(torch.permute(r[0], (1, 2, 0)).cpu().numpy(), vmin=-mnx, vmax=mnx, cmap="bwr")
+
+                    # remove tics
+                    for j in range(2):
+                        axs[j].set_xticks([])
+                        axs[j].set_yticks([])
+                    plt.tight_layout()
+                    plt.show()
+                    print("R:",torch.min(r).item(),"--", torch.max(r).item())
+                    print("x:", torch.min(tensor_x[i]).item(),"--", torch.max(tensor_x[i]).item())
+
+        # Set refiner params - depends on explainer
+        refiner_class = get_refiner_class(exp["refinement"])
+        refiner_kwargs = {
+            "layer_names": exp["layer_names"],
+            "n_classes": n_classes,
+            "verbose": verbose,
+            "explainer": explainer
+        }
+        refiner_kwargs.update(loaded_refiner_kwargs)
+        if exp["refinement"] in ["pep","pegem"] and "mnist" not in scenario_name and "collapse_start" not in refiner_kwargs:
+            print("Setting start layer to collapse spatial dimensions by default.")
+            refiner_kwargs.update({"collapse_start":1})
+
+        # Create decomposers - depends on refinement params
+        if exp["decomposition_type"] != "none":
+            decomposers = {}
+            all_layers = refiner_kwargs["layer_names"] if "layer_names" in refiner_kwargs else exp["layer_names"]
+            layers_to_decompose = all_layers[-1:] if exp["refinement"] in ["pep", "pegem"] else all_layers
+            for ln in layers_to_decompose:
+                print(f"Decomposing layer {ln} with {exp['decomposition_type']}")
+                dec_save_path = None
+                if refinement_path is not None:
+                    # TODO: consistent save-file path management with refiners
+                    dec_save_path = os.path.join(refinement_path, f"decomp_{exp['model_name']}_{ln}_{n_samples}_{r}")
+                decomposers.update({ln:get_decomposer(
+                        dec_name=exp["decomposition_type"],
+                        dec_config=get_decomposition_config(exp["decomposition_type"]),
+                        layer_name=ln,
+                        model=model.model,
+                        explainer=explainer,
+                        data_loader=refine_tensor_loader,
+                        path=dec_save_path,
+                        device=device
+                )})
+
+            for ln in layers_to_decompose:
+                decomposers[ln].attach_to_model(model.model, ln)
+
+            if "layer_names" in refiner_kwargs:
+                for l_i, ln in enumerate(refiner_kwargs["layer_names"]):
+                    if ln in layers_to_decompose:
+                        refiner_kwargs["layer_names"][l_i] = ln + ".1.encoder"
+
         if exp["refinement"] != "none":
-            refiner_class = get_refiner_class(exp["refinement"])
-            refiner_kwargs = {
-                "layer_names": exp["layer_names"],
-                "n_classes": n_classes,
-                "verbose": verbose
-            }
-            refiner_kwargs.update(loaded_refiner_kwargs)
-
-            if exp["explanation_type"] is not None:
-                explainer = get_explainer(model, n_classes, exp)
-                refiner_kwargs["explainer"] = explainer
-
-                if verbose and not "vit" in exp["model_name"]:
-                    # TODO: Remove in final version
-                    print("Plotting explanation for a few examples")
-                    for i in range(3):
-                        with explainer.attributor:
-                            out, r = explainer.attributor(tensor_x[i:(i+1)], torch.eye(n_classes, device="cuda",
-                                                                            dtype=torch.int)[[tensor_y[i:(i+1)]]])
-                        fig, axs = plt.subplots(1, 2)
-                        axs[0].imshow(torch.permute(tensor_x[i], (1, 2, 0)).cpu().numpy())
-                        mnx = max(-torch.min(r), torch.max(r))
-                        axs[1].imshow(torch.permute(r[0], (1, 2, 0)).cpu().numpy(), vmin=-mnx, vmax=mnx, cmap="bwr")
-                        plt.show()
-                        print("R:",torch.min(r).item(),"--", torch.max(r).item())
-                        print("x:", torch.min(tensor_x[i]).item(),"--", torch.max(tensor_x[i]).item())
-
             # Hyperparam search
             chosen_hyperparams = {}
             if len(hyperparams) != 0:
                 for h_i, (k, vals) in enumerate(hyperparams.items()):
                     if h_i > 0:
                         raise NotImplementedError(
-                            "Hyperparam search for more than one parameter not implemented"
+                                "Hyperparam search for more than one parameter not implemented"
                         )
                     best = None
                     if False:  # len(vals) == 1: TODO reactivate for refitting
@@ -256,9 +372,9 @@ def run_experiment(
                         for val in vals:
                             print(f"{exp['refinement']} Hyperparam: {k}={val}")
                             refiner = refiner_class(
-                                model.model,
-                                device=device,
-                                **dict(refiner_kwargs, **{k: val}),
+                                    model.model,
+                                    device=device,
+                                    **dict(refiner_kwargs, **{k: val}),
                             )
                             refiner.train_refinement(refine_tensor_loader)
                             if refinement_path is not None:
@@ -272,15 +388,15 @@ def run_experiment(
                             refiner.refine()
                             print("-------- Validation set --------")
                             result_val = evaluate(
-                                model=model,
-                                data_loader=val_tensor_loader,
-                                device=device,
+                                    model=model,
+                                    data_loader=val_tensor_loader,
+                                    device=device,
                             )
                             print("-------- Test set --------")
                             result = evaluate(
-                                model=model,
-                                data_loader=test_loader,
-                                device=device
+                                    model=model,
+                                    data_loader=test_loader,
+                                    device=device
                             )
                             refiner.unrefine()
 
@@ -334,6 +450,8 @@ if __name__ == "__main__":
         print(f"Skipping {out_file} -- already exists")
         exit()
 
+    print(f"Running experiment with {args}")
+
     results = run_experiment(
             scenario_name=args.scenario_name,
             data_root=args.data_root,
@@ -344,6 +462,8 @@ if __name__ == "__main__":
             refinement_path=args.refinement_path,
             layer_names=args.layer_names,
             refiner_kwargs=args.refiner_kwargs,
+            explanation_type=args.explanation_type,
+            decomposition_type=args.explanation_type
     )
 
     # Save results

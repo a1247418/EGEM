@@ -1,10 +1,14 @@
 from typing import List, Optional, Union
 import torch
+from functools import partial
 from zennit.attribution import Gradient, SmoothGrad
 from zennit.composites import EpsilonPlusFlat, EpsilonGammaBox, EpsilonPlus, LayerMapComposite, EpsilonAlpha2Beta1Flat, layer_map_base
 from zennit.torchvision import VGGCanonizer, ResNetCanonizer
 from zennit.types import Convolution
 from zennit.rules import AlphaBeta
+from zennit.core import Composite
+
+from src.refinement.lrp_resnet import module_map_resnet
 
 
 class AlphaBetaComposite(LayerMapComposite):
@@ -18,6 +22,7 @@ class AlphaBetaComposite(LayerMapComposite):
             (torch.nn.Linear, AlphaBeta(alpha=alpha, beta=beta, stabilizer=stabilizer, **rule_kwargs)),
         ]
         super().__init__(layer_map=layer_map, canonizers=canonizers)
+
 
 class Explainer:
     def __init__(
@@ -46,8 +51,10 @@ class Explainer:
             canonizers = [VGGCanonizer()]
         elif canonizer == "resnet":
             canonizers = [ResNetCanonizer()]
-        else:
+        elif canonizer is None:
             canonizers = []
+        else:
+            raise ValueError("Invalid canonizer: %s" % canonizer)
 
         if explanation_type == "smoothgrad":
             attributor = SmoothGrad(
@@ -65,6 +72,9 @@ class Explainer:
                 composite = AlphaBetaComposite(alpha=alpha, beta=beta, canonizers=canonizers, zero_params=zero_params)
             elif explanation_type == "epsilon_alpha2_beta1_flat":
                 composite = EpsilonAlpha2Beta1Flat(canonizers=canonizers, zero_params=zero_params)
+            elif explanation_type == "resnet":
+                mmap = partial(module_map_resnet, zero_params=zero_params)
+                composite = Composite(module_map=mmap, canonizers=canonizers)
             elif explanation_type == "gradient":
                 composite = None
             attributor = Gradient(model, composite)
@@ -82,6 +92,11 @@ class Explainer:
             y = int(y.item())
         selector = torch.eye(self.n_classes, device=x.device)[[y]]
 
+        if self.constant_relevance is False:
+            with torch.no_grad():
+                out = self.attributor.model(x)[0]
+            selector = selector * out
+
         def store_hook(module, input, output):
             module.output = output
             output.retain_grad()
@@ -93,7 +108,7 @@ class Explainer:
                 ]
             else:
                 handles = []
-            output, relevance = self.attributor(x, selector)
+            _, relevance = self.attributor(x, selector)
 
         for handle in handles:
             handle.remove()
@@ -108,13 +123,9 @@ class Explainer:
                     )
                     for r, module in zip(relevance, module_list)
                 ]
-
-            if not self.constant_relevance:
-                relevance = [r.detach() * (output.detach() @ selector.T) for r in relevance]
         else:
-            if not self.constant_relevance:
-                relevance = relevance.detach() * (output.detach() @ selector.T)
-                if self.sensitivity_only:
-                    relevance = relevance.detach() / torch.where(torch.eq(x, 0.), 1., x)
+            if self.sensitivity_only:
+                relevance = relevance / torch.where(torch.eq(x, 0.), 1., x)
+            relevance = relevance.detach()
 
         return relevance

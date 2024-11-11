@@ -1,10 +1,7 @@
 from functools import reduce, partial
-from typing import List, Optional, Union
-
+from typing import List, Optional
 import torch
 from sklearn.decomposition import PCA
-
-from refinement.explainer import Explainer
 
 
 def get_module_by_name(module: torch.nn.Module, access_string: str):
@@ -24,12 +21,18 @@ def layer_names_to_layers(model: torch.nn.Module, layer_names: List[str]):
     return layers
 
 
-def captured_to_list(layer_names, captured, avg_conv_spatial=True, del_captured=True, divisor=1.):
+def captured_to_list(layer_names, captured, reduce_spatial=True, del_captured=True, divisor=1.):
     cs = []
     for l in layer_names:
         cs.append(torch.cat(captured[l], dim=0).to(torch.float32) / divisor)
-        if avg_conv_spatial and len(cs[-1].shape) == 4:
-            cs[-1] = torch.sum(cs[-1], dim=[-2, -1])
+        if reduce_spatial and len(cs[-1].shape) == 4:
+            #cs[-1] = torch.sum(cs[-1], dim=[-2, -1]) # alternative: sum pooling
+            #cs[-1] = torch.mean(cs[-1], dim=[-2, -1]) # alternative: avg pooling
+            cs[-1] = cs[-1].permute(1,0,2,3).reshape([cs[-1].shape[1], -1]).T # [bs, n_channels, h, w] -> [bs*h*w, n_channels]
+            # if too many, subsample:
+            if cs[-1].shape[0] > 100000:
+                idxs = torch.randperm(cs[-1].shape[0])[:100000]
+                cs[-1] = cs[-1][idxs]
 
     if del_captured:
         del captured
@@ -47,11 +50,12 @@ def get_activations(
     average_tokens: bool = False,
     square: bool = True,
     reduce: bool = True,
-    explainer: Optional[Explainer] = None,
+    explainer: Optional = None,
     combine_a_exp: bool = False,
     batch_dim: int = 1,
     capture_outputs: bool = False,
     avg_on_the_fly = False,
+    reduce_spatial=True,
     device: str = "cuda",
     silent: bool = True,
 ):
@@ -68,6 +72,7 @@ def get_activations(
     :param combine_a_exp: Whether to combine the activations and explanations. [True, False]
     :param batch_dim: The batch-dimension in the input. [0,1], [batch, n_tokens, dimension] if batch_dim == 0 else [n_tokens, batch, dimension]
     :param capture_outputs: Whether to capture the outputs of the layers or the inputs.
+    :param reduce_spatial: Whether to reduce the spatial dimensions of the activations. [True, False]
     :param device: The device to use. ["cuda", "cpu"]
     """
     # TODO: different batch_dims/layer
@@ -156,10 +161,10 @@ def get_activations(
                 model(x.to(device))
 
     # Post-process activations
-    acs = captured_to_list(layer_names, all_captured_activations, divisor=n_samples)
+    acs = captured_to_list(layer_names, all_captured_activations, reduce_spatial=reduce_spatial, divisor=1.)#n_samples)
     # Post-process explanations
     if capture_explanations:
-        rs = captured_to_list(layer_names, all_captured_explanations, divisor=n_samples)
+        rs = captured_to_list(layer_names, all_captured_explanations, reduce_spatial=reduce_spatial, divisor=1.)#n_samples)
 
     if not silent:
         print("Shape of recorded activations:")
@@ -176,6 +181,7 @@ def get_activations(
         pca_Xm = []
         for l_i in range(len(layers)):
             X = acs[l_i]  # cast f16->f32 to avoid inf values
+            print("layer",l_i, "shape", X.shape)
             max_n_components = min(X.shape[0], X.shape[1])
             if pca_dims is not None:
                 max_n_components = min(pca_dims, max_n_components)
@@ -252,3 +258,15 @@ def replace_layer(model: torch.nn.Module, layer_name: str, mod_layer: torch.nn.M
     else:
         # Replace a module
         model.__setattr__(layer_name, mod_layer)
+
+
+def calculate_sensitivity(r_mat, em_a):
+    # TODO: adapt to conv em
+    for _ in range(len(r_mat.shape) - len(em_a.shape)):
+        em_a = em_a.unsqueeze(-1)
+    s_mat = (r_mat / (em_a + (em_a == 0) + torch.sign(em_a)*1e-5)).detach()
+
+    assert not torch.isnan(s_mat).any()
+    assert not torch.isinf(s_mat).any()
+
+    return s_mat

@@ -9,7 +9,8 @@ def get_experiment_config(experiment_name: str, refinement: str):
         "model_file_path": None,
         "poisoning_strategy": "none",
         "n_reps": 5,
-        "explanation_type": "epsilon_alpha2_beta1_flat"#"epsilon_plus_flat" #"epsilon_gamma_box"#"gradient" #
+        "explanation_type": "epsilon_alpha2_beta1_flat",#"epsilon_plus_flat" #"epsilon_gamma_box"#"gradient" #
+        "decomposition_type": "none",
     }
     if any([s in experiment_name for s in ("carton", "mountain-bike", "mtb")]):
         if "carton-crate" in experiment_name:
@@ -30,7 +31,7 @@ def get_experiment_config(experiment_name: str, refinement: str):
             background_classes = [444,]
 
         if model_name == "resnet50":
-            layer_names = ['features.7', 'features.10'] if refinement in ("pegem", "pep") else [
+            layer_names = ['features.6', 'features.10'] if refinement in ("pegem", "pep") else [
                 'features.4.0.conv1',
                 'features.5.0.conv1',
                 'features.6.0.conv1',
@@ -153,7 +154,7 @@ def get_refinement_hyperparams(refinement_name:str):
         }
     elif refinement_name == "pep":
         hyperparams = {
-            "percent_pruned": [99.9,99.7,99.5,99,97,95,90,85]+[i*10 for i in range(2,9)][::-1],#[98,96,94,92,90,88,86,84,82,80,75,70,65],#[99.99,99.95,99.9,99.5,99,98,97,96,95,94,93,90],#,98.5,98.,97.],#99.5, 99.3, 99, 98, 97, 95, 0],
+            "percent_pruned": [99,97,95,90,80,50,20,10,5,1]#[99.9,99.7,99.5,99,97,95,90,85]+[i*10 for i in range(2,9)][::-1],#[98,96,94,92,90,88,86,84,82,80,75,70,65],#[99.99,99.95,99.9,99.5,99,98,97,96,95,94,93,90],#,98.5,98.,97.],#99.5, 99.3, 99, 98, 97, 95, 0],
         }
     elif refinement_name == "pegem":
         hyperparams = {
@@ -180,3 +181,21 @@ def get_refinement_hyperparams(refinement_name:str):
     else:
         raise AttributeError("No hyperparams for refinement: %s" % refinement_name)
     return hyperparams
+
+
+def get_decomposition_config(decomposition_name:str):
+    if decomposition_name == "pca":
+        decomposition_config = {
+            "n_components": 50
+        }
+    elif decomposition_name == "prca":
+        decomposition_config = {
+            "n_components": 20
+        }
+    elif decomposition_name == "drsa":
+        decomposition_config = {
+            "n_components": 4
+        }
+    else:
+        raise AttributeError("No decomposition config for decomposition: %s" % decomposition_name)
+    return decomposition_config
