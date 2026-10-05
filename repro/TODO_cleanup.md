@@ -14,9 +14,9 @@ Items marked **[fixed on branch]** have a minimal fix applied; the rest are open
   (strongest refinement whose *validation* accuracy is within s% slack of the unrefined model's) is
   now `src/selection.py`, which `run.py --slack` and `repro/analyze.py` both use. This needs
   `orig_top1_val`, which each result now stores.
-- `src/run.py` `__main__` passes `decomposition_type=args.explanation_type` (should be
+- **[fixed on branch]** `src/run.py` `__main__` passes `decomposition_type=args.explanation_type` (should be
   `args.decomposition_type`), so any CLI run tries to build a decomposer named after the LRP rule.
-- `src/run.py` CLI offers `--poisoning_strategy targeted` but `CH_datasets.scenario_examples`
+- **[fixed on branch]** `src/run.py` CLI offers `--poisoning_strategy targeted` but `CH_datasets.scenario_examples`
   expects `"target"` -> ValueError.
 - **[fixed on branch]** `src/experiment_config.py` mnist-rgb branch tested `"artifact" in "experiment_name"`
   (a string literal, always False), so all MNIST-RGB variants silently loaded **random weights**.
@@ -27,7 +27,7 @@ Items marked **[fixed on branch]** have a minimal fix applied; the rest are open
   definitions (blur kernel, tint, removed region) should replace them if they can be found.
 - **[fixed on branch]** `run.py` disabled normalization only for `"mnist-8"`; the RGB-MNIST models
   were also trained on unnormalized inputs.
-- `run.py` verbose plotting hard-codes `device="cuda"`.
+- **[fixed on branch]** `run.py` verbose plotting hard-codes `device="cuda"`.
 
 ## Paper/code mismatches to resolve or document
 - **[option on branch]** Paper: refinement data = only **correctly predicted** clean samples, 700 per
@@ -45,8 +45,9 @@ Items marked **[fixed on branch]** have a minimal fix applied; the rest are open
   `mnist_refinement_idcs.npy` with 39,942 indices.
 - Paper says the ISIC model is VGG-16 fine-tuned with 2 output nodes; config uses 8 classes
   (`vgg16_isic`, target 1, background 0,2..7).
-- README of CH_datasets says ISIC 2019 data; ISIC model weights (`isic_vgg16.model`) are not in the
-  repo or its history -> must be retrained (no training script/config for it).
+- **[fixed on branch]** ISIC model weights (`isic_vgg16.model`) are not in the repo or its history and there
+  was no recipe. `repro/train_isic.py` retrains it (0.80 clean accuracy, as in the paper); the weights
+  (537 MB) are not committed.
 
 - MNIST net in `blueprints.py` (conv 3x3/3x3, FC 784->500) differs from paper Table E.2
   (conv 3/5, FC 200). The released `mnist.model` matches the code, so the table is probably wrong.
@@ -59,15 +60,16 @@ Items marked **[fixed on branch]** have a minimal fix applied; the rest are open
 - **[fixed on branch]** `CH_datasets/datasets/splits.py`: the test split's `"dirty"` entry is set to the *train* dirty indices,
   for both ImageNet (`imagenet_train_dirty`) and ISIC (`isic_train_dirty`). This is currently harmless, because
   only `test["clean"]` is used, but `test["all"]` is wrong.
-- `src/run_training.py` / `models/training.py`: `PLModel.configure_optimizers` ignores `--lr` and
-  always uses SGD(lr=1e-3, momentum 0.9), while the paper uses Adam. There is no recipe for the ISIC model;
-  `repro/train_isic.py` follows Supp. E instead.
+- **[fixed on branch]** `src/run_training.py` / `models/training.py`: `PLModel.configure_optimizers` ignores `--lr` and
+  always used SGD(lr=1e-3, momentum 0.9), while the paper uses Adam. It now uses Adam with the given lr.
+  For the ISIC model, `repro/train_isic.py` follows Supp. E.
 
 ## Missing pieces for reproduction
 - **[fixed on branch]** No README (the root README was just `# EGEM`): it now has install, data, quick-start and layout sections.
-- No script that produces the paper's figures/tables (Fig. 3, 4, 6, 7, G/H/I) from results.
-- Model weights: only `mnist.model` at HEAD. `mnist-rgb-*.model` and `celeba_vgg16.model`
-  exist only in git history (`e9b127c`, deleted in `d896bad`); ISIC weights never committed.
+- **[partly fixed on branch]** No script produced the paper's figures/tables from results. `repro/make_figures.py`
+  now makes Fig. 3 (MNIST, ISIC), Fig. 6 and Supp. H, and `repro/sparsity_fig7.py` makes Fig. 7. Fig. 4 and G/I are still missing.
+- **[mostly fixed on branch]** Model weights: only `mnist.model` was at HEAD. `mnist-rgb-*.model` are restored
+  from git history (`e9b127c`) and ISIC can be retrained; `celeba_vgg16.model` is still only in history.
   ImageNet experiments use torchvision pretrained weights (fine).
 - Datasets: no download helper. **[fixed on branch]** The MNIST loader in CH_datasets now has `download=True`;
   the other datasets are **[documented on branch]**:

@@ -28,8 +28,7 @@ class PLModel(pl.LightningModule):
         return loss
 
     def configure_optimizers(self):
-        # optimizer = optim.Adam(self.model.parameters(), lr=self.lr)
-        optimizer = optim.SGD(self.model.parameters(), lr=0.001, momentum=0.9)
+        optimizer = optim.Adam(self.model.parameters(), lr=self.lr)  # paper Supp. E: Adam for all models
         return optimizer
 
 
