@@ -5,6 +5,7 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 sys.path[:0] = [os.path.join(ROOT, "src"), ROOT, os.path.join(ROOT, "src", "refinement", "decomposition")]
 import torch
 from run import run_experiment
+from selection import select_by_slack
 
 p = argparse.ArgumentParser()
 p.add_argument("--scenario", default="mnist-8")
@@ -23,6 +24,8 @@ t = time.time()
 res = run_experiment(scenario_name=a.scenario, data_root=a.data_root, refinement=a.refinement,
                      n_reps=a.n_reps, n_samples=a.n_samples, poisoning_strategy=a.poisoning,
                      **({"explanation_type": a.explanation_type} if a.explanation_type else {}))
+for sel in select_by_slack(res, a.refinement, 0.05):
+    print(f"Selected (5% slack): rep {sel['rep']}, test top-1 {float(sel['top1'][0]):.4f}")
 for r in res:
     for k in ("output", "true", "predicted"):
         r.pop(k, None)

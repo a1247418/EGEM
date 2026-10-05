@@ -11,6 +11,7 @@ from functools import partial
 from typing import Optional
 
 from evaluation import get_n_shot_data, evaluate
+from selection import select_by_slack
 from refinement.refiner import (
     EGEMRefiner,
     get_module_by_name,
@@ -60,6 +61,7 @@ def parseargs():
     aa("--layer_names", type=str, nargs="+", default=None)
     aa("--subfolder", type=str, default=None)
     aa("--skip_existing", action="store_true")
+    aa("--slack", type=float, default=0.05, help="Slack for the paper's hyperparameter selection (Sec. 4.5)")
     args = parser.parse_args()
     return args
 
@@ -369,63 +371,51 @@ def run_experiment(
         if exp["refinement"] != "none":
             # Unrefined validation accuracy, needed for the paper's slack-based hyperparameter selection
             orig_top1_val = evaluate(model=model, data_loader=val_tensor_loader, device=device)["top1"]
-            # Hyperparam search
-            chosen_hyperparams = {}
+            # Hyperparam search: all values are evaluated and returned; see selection.select_by_slack
             if len(hyperparams) != 0:
                 for h_i, (k, vals) in enumerate(hyperparams.items()):
                     if h_i > 0:
                         raise NotImplementedError(
                                 "Hyperparam search for more than one parameter not implemented"
                         )
-                    best = None
-                    if False:  # len(vals) == 1: TODO reactivate for refitting
-                        chosen_hyperparams[k] = vals[0]
-                    else:
-                        for val in vals:
-                            print(f"{exp['refinement']} Hyperparam: {k}={val}")
-                            refiner = refiner_class(
-                                    model.model,
-                                    device=device,
-                                    **dict(refiner_kwargs, **{k: val}),
-                            )
-                            refiner.train_refinement(refine_tensor_loader)
-                            if refinement_path is not None:
-                                try:
-                                    file_name = refiner.get_filename()
-                                    save_path = os.path.join(refinement_path, f"rep{r}_" + file_name)
-                                    refiner.save(save_path)
-                                except Exception as e:
-                                    print(f"Could not save refiner: {repr(e)}")
+                    for val in vals:
+                        print(f"{exp['refinement']} Hyperparam: {k}={val}")
+                        refiner = refiner_class(
+                                model.model,
+                                device=device,
+                                **dict(refiner_kwargs, **{k: val}),
+                        )
+                        refiner.train_refinement(refine_tensor_loader)
+                        if refinement_path is not None:
+                            try:
+                                file_name = refiner.get_filename()
+                                save_path = os.path.join(refinement_path, f"rep{r}_" + file_name)
+                                refiner.save(save_path)
+                            except Exception as e:
+                                print(f"Could not save refiner: {repr(e)}")
 
-                            refiner.refine()
-                            print("-------- Validation set --------")
-                            result_val = evaluate(
-                                    model=model,
-                                    data_loader=val_tensor_loader,
-                                    device=device,
-                            )
-                            print("-------- Test set --------")
-                            result = evaluate(
-                                    model=model,
-                                    data_loader=test_loader,
-                                    device=device
-                            )
-                            refiner.unrefine()
+                        refiner.refine()
+                        print("-------- Validation set --------")
+                        result_val = evaluate(
+                                model=model,
+                                data_loader=val_tensor_loader,
+                                device=device,
+                        )
+                        print("-------- Test set --------")
+                        result = evaluate(
+                                model=model,
+                                data_loader=test_loader,
+                                device=device
+                        )
+                        refiner.unrefine()
 
-                            if best is None or result["top1"] > best["top1"]:
-                                best = result
-                                chosen_hyperparams[k] = val
-
-                            to_return = {"rep": r, k: val, "orig_top1_val": orig_top1_val}
-                            to_return.update(exp)
-                            to_return.update(result)
-                            result_val = {k + "_val": v for k, v in result_val.items()}
-                            to_return.update(result_val)
-                            results.append(to_return)
+                        to_return = {"rep": r, k: val, "orig_top1_val": orig_top1_val}
+                        to_return.update(exp)
+                        to_return.update(result)
+                        result_val = {k + "_val": v for k, v in result_val.items()}
+                        to_return.update(result_val)
+                        results.append(to_return)
         else:
-            # TODO implement refitting on data + refine for none and others
-            # refiner = refiner_class(model.model, layer_names=exp["layer_names"])#, **chosen_hyperparams)
-            # refiner.train_refinement(refine_tensor_loader)
             result_val = evaluate(
                 model=model, data_loader=val_tensor_loader, device=device
             )  #  TODO should this be on the whole data
@@ -477,6 +467,10 @@ if __name__ == "__main__":
             explanation_type=args.explanation_type,
             decomposition_type=args.explanation_type
     )
+
+    for sel in select_by_slack(results, args.refinement, args.slack):
+        print(f"Selected (slack {args.slack}): rep {sel['rep']}, test top-1 {np.mean(sel['top1']):.4f}",
+              {k: v for k, v in sel.items() if k in ("alpha", "lmbda", "n_epochs")})
 
     # Save results
     with open(out_file, "wb") as f:

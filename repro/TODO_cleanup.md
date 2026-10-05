@@ -9,11 +9,11 @@ Items marked **[fixed on branch]** have a minimal fix applied; the rest are open
   which raises `TypeError` at import, so `run.py` cannot start. Needs `Optional[Union[A, B]]`.
 - **[fixed on branch]** `src/models/custom_model.py:19` loads state dicts with `map_location=None`;
   `mnist.model` was saved on CUDA, so loading fails on CPU-only machines.
-- `src/run.py` picks the reported hyperparameter by **best test accuracy**
-  (`if best is None or result["top1"] > best["top1"]`). That is test-set leakage and is not the
-  paper's procedure (strongest refinement whose *validation* accuracy is within s% slack of the
-  unrefined model's). **[partly fixed on branch]** `orig_top1_val` is now stored per result so the
-  paper's selection can be done post hoc (`repro/analyze.py`); the in-script selection is still wrong.
+- **[fixed on branch]** `src/run.py` tracked the hyperparameter with the **best test accuracy**
+  (dead code: it was never saved, but it invites test-set leakage). It is removed. The paper's rule
+  (strongest refinement whose *validation* accuracy is within s% slack of the unrefined model's) is
+  now `src/selection.py`, which `run.py --slack` and `repro/analyze.py` both use. This needs
+  `orig_top1_val`, which each result now stores.
 - `src/run.py` `__main__` passes `decomposition_type=args.explanation_type` (should be
   `args.decomposition_type`), so any CLI run tries to build a decomposer named after the LRP rule.
 - `src/run.py` CLI offers `--poisoning_strategy targeted` but `CH_datasets.scenario_examples`

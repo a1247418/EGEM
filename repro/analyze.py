@@ -4,13 +4,12 @@ For every rep, pick the strongest refinement whose validation accuracy is at mos
 below the unrefined model's validation accuracy, then report test accuracy on clean (0%)
 and fully poisoned (100%) data.
 """
-import argparse, glob, os, pickle as pkl
+import argparse, glob, os, sys, pickle as pkl
 import numpy as np
 import pandas as pd
 
-# Hyperparameter name and whether a *smaller* value means *stronger* refinement
-HP = {"egem": ("alpha", True), "pcaegem": ("alpha", True), "ridge": ("lmbda", False), "rgem": ("lmbda", False),
-      "retrain": ("n_epochs", False)}
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
+from selection import REFINEMENT_HP as HP  # hyperparameter name, and whether smaller = stronger
 
 
 def load(results_dir, n, reps, scenario="mnist-8"):

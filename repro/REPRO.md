@@ -34,10 +34,10 @@ python repro/make_figures.py
 Everything runs on CPU. One EGEM/Ridge/RGEM run (5 reps × 9–12 hyperparameters) takes 1–5 min, Retrain about 13 min. PCA-EGEM takes
 3–10 min per rep, dominated by sklearn's full SVD.
 
-**Hyperparameter selection.** `run.py` keeps the hyperparameter with the best *test* accuracy. That
-leaks the test set, and it is not what the paper does. `analyze.py` implements the paper's rule
-(Sec. 4.5): per rep, take the strongest refinement whose validation accuracy is at most `slack`
-below the unrefined model's validation accuracy. All numbers below use 5% slack.
+**Hyperparameter selection.** Every run evaluates the whole hyperparameter grid. The reported value
+follows the paper's rule (Sec. 4.5, `src/selection.py`): per rep, take the strongest refinement whose
+validation accuracy is at most `slack` below the unrefined model's validation accuracy. The original
+`run.py` tracked the best *test* accuracy instead; that dead code is removed. All numbers below use 5% slack.
 
 ## Results
 
