@@ -357,6 +357,8 @@ def run_experiment(
                         refiner_kwargs["layer_names"][l_i] = ln + ".1.encoder"
 
         if exp["refinement"] != "none":
+            # Unrefined validation accuracy, needed for the paper's slack-based hyperparameter selection
+            orig_top1_val = evaluate(model=model, data_loader=val_tensor_loader, device=device)["top1"]
             # Hyperparam search
             chosen_hyperparams = {}
             if len(hyperparams) != 0:
@@ -404,7 +406,7 @@ def run_experiment(
                                 best = result
                                 chosen_hyperparams[k] = val
 
-                            to_return = {"rep": r, k: val}
+                            to_return = {"rep": r, k: val, "orig_top1_val": orig_top1_val}
                             to_return.update(exp)
                             to_return.update(result)
                             result_val = {k + "_val": v for k, v in result_val.items()}
