@@ -13,7 +13,7 @@ and model weight is in [`DATA.md`](DATA.md).
 | MNIST-8, sample-size sweep (Supp. H) | **Reproduced** for Ridge / EGEM / PCA-EGEM, 5–700 samples per class |
 | MNIST CH variants, Fig. 6 | **Partly reproduced**: weights restored from git history; the poisoners were never released, so they are reconstructed and calibrated (see below) |
 | Sparsity, Fig. 7 | Partly: the Linear_1 column matches; MaxPool2d / Linear_2 do not |
-| ISIC, Fig. 3 | In progress: data downloaded and verified (`DATA.md`); `isic_vgg16.model` was never committed and is being retrained (`train_isic.py`) |
+| ISIC, Fig. 3 | **Partly reproduced**: retrained model matches the original's accuracy; PCA-EGEM helps (+4 vs ≈+12 points), EGEM does not |
 | ImageNet carton/mtb, Fig. 3 | Blocked: needs ImageNet train+val for 6 classes (the data on the cluster is outside `$HOME`) |
 | CelebA, Sec. 6 | Not attempted (qualitative; `celeba_vgg16.model` is in git history) |
 
@@ -44,7 +44,7 @@ below the unrefined model's validation accuracy. All numbers below use 5% slack.
 Mean ± std over 5 reps (the test set is 1000 MNIST test images, fixed across reps). "clean" = 0%
 poisoning, "poisoned" = uniform 100% poisoning (the CH feature is added to every test image).
 
-### MNIST-8 (paper Fig. 3), 700 samples/class — `figures/fig3_mnist.png`
+### MNIST-8 (paper Fig. 3), 700 samples/class — `figures/fig3_mnist_isic.png`
 
 | Method | clean | poisoned | chosen hyperparameter |
 |---|---|---|---|
@@ -70,6 +70,37 @@ is not penalized, and the shrinkage is towards 0, not towards w_old. λ is relat
 E[aaᵀ], as in Eq. D.1/D.2. The earlier code used the sum aᵀa, so its λ was n_train = 5600 times smaller. With the sum the
 paper's grid stops before the slack boundary (RGEM at λ = 1e4 was still at 0.987 / 0.766). The normal equations are
 solved in float64, because aᵀa is near-singular (dead ReLUs).
+
+### ISIC (paper Fig. 3), 700 samples/class
+
+Model: `train_isic.py` (VGG-16, Adam 1e-4, bs 64, 10 epochs). The weights were never released, so it is
+retrained. Clean test accuracy 0.800, matching the paper's ≈0.80. Refinement runs: one GPU shard per
+method and poisoning level, 8–28 min each.
+
+| Method | clean | poisoned | paper clean / poisoned (read from Fig. 3) |
+|---|---|---|---|
+| Original | 0.800 ± 0.000 | 0.628 ± 0.000 | ≈ 0.80 / 0.645 |
+| Ridge | 0.786 ± 0.016 | 0.628 ± 0.008 | ≈ 0.80 / 0.69 |
+| RGEM | 0.797 ± 0.001 | 0.625 ± 0.001 | ≈ 0.81 / 0.65 |
+| EGEM | 0.794 ± 0.001 | 0.633 ± 0.003 | ≈ 0.77 / 0.735 |
+| PCA-EGEM | 0.792 ± 0.002 | **0.672 ± 0.007** | ≈ 0.80 / 0.765 |
+
+As in the paper, the original model relies on the colored patches (−17 points), and PCA-EGEM is the only
+method that clearly improves poisoned accuracy without losing clean accuracy. The size of the effect is
+not reproduced: +4.4 points instead of ≈ +12, and **EGEM does not help at all** (paper ≈ +9).
+- EGEM peaks at 0.639 poisoned for any α (α = 0.4) and collapses below α = 0.2.
+- PCA-EGEM is almost flat in α: it already reaches 0.682 at α = 0.99, so most of its gain comes from the
+  PCA projection itself. Directions that the 5,600 clean refinement images do not span are removed.
+
+Likely causes:
+- The model is retrained, so its CH features may be more entangled with useful features than in the
+  authors' model.
+- The refinement images are a subset of the training images (this is how CH_datasets builds the
+  split), so the validation accuracy used for selection is ≈ 0.97 and not informative.
+- With the triangular rule, the first refined layers are pruned least, while the paper's Supp. J finds
+  the ISIC CH feature most separable at early layers.
+
+Retrain is running at the paper's lr of 1e-7; a smoke test showed it does not change the model.
 
 ### Sample-size sweep (Supp. H), MNIST-8 — `figures/figH_samples.png`
 
@@ -120,10 +151,10 @@ tapped the activations. Here they are the inputs of the refined layers `features
 point in the network reproduces the paper's artifact value of 0.62 at Linear_2.
 
 ## Next steps
-1. ImageNet tasks (carton/crate/envelope/packet, mtb/bbt): they need a local ImageNet copy of 6 classes plus
-   validation. Pretrained torchvision weights are fine. A GPU job is needed (VGG-16/ResNet-50 with
-   12 α values × 5 reps): a single 40 GB A100 or a GPU shard, a few hours.
-2. ISIC: download ISIC 2019, retrain `vgg16_isic` (weights were never released), and redo the manual
-   removal of patch images from the refinement data. Needs a GPU.
+1. ImageNet tasks (carton/crate/envelope/packet, mtb/bbt): they need the 6 classes plus validation (see
+   `DATA.md` for ways to get only those) and a patch to `splits.py`, which addresses images by their
+   position in the full list. Pretrained torchvision weights are fine. GPU shard jobs as for ISIC.
+2. ISIC: investigate why EGEM does not help (layer choice/scaling rule, refinement data overlapping the
+   training data); Retrain results are pending.
 3. Run Retrain and RGEM on the sample-size sweep (Supp. H.15) and the MNIST variants (Fig. 6).
 4. Work through `TODO_cleanup.md`. The test-leaking selection in `run.py` and the lazy `cxai` import come first.

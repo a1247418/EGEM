@@ -39,11 +39,15 @@ def bars(ax, s, title):
     ax.set_title(title, color=INK, fontsize=10)
 
 
-# Fig. 3 (MNIST part)
-fig, ax = plt.subplots(figsize=(6.5, 3.5))
-bars(ax, summary("mnist-8", 700), "MNIST-8, 700 samples/class, 5% slack")
-ax.set_ylabel("Test accuracy"); ax.legend(frameon=False, loc="upper center", bbox_to_anchor=(0.5, -0.1), ncol=2)
-fig.tight_layout(); fig.savefig(f"{OUT}/fig3_mnist.png", dpi=150)
+# Fig. 3 (MNIST and ISIC; the ImageNet tasks need data we do not have)
+fig, axs = plt.subplots(1, 2, figsize=(12, 3.5), sharey=True)
+for ax, (scen, title) in zip(axs, [("mnist-8", "MNIST-8"), ("isic-1", "ISIC")]):
+    s = summary(scen, 700)
+    if s is not None:
+        bars(ax, s, f"{title}, 700 samples/class, 5% slack")
+axs[0].set_ylabel("Test accuracy")
+axs[0].legend(frameon=False, loc="upper center", bbox_to_anchor=(0.5, -0.1), ncol=2)
+fig.tight_layout(); fig.savefig(f"{OUT}/fig3_mnist_isic.png", dpi=150)
 
 # Fig. 6: CH feature variants
 fig, axs = plt.subplots(1, 4, figsize=(12, 3.2), sharey=True)
