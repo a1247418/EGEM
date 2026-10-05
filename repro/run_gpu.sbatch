@@ -9,4 +9,4 @@
 #SBATCH --time=01:00:00
 #SBATCH --output=repro/logs/refine_%j.log
 cd "$SLURM_SUBMIT_DIR"
-~/.conda/envs/egem/bin/python -u repro/run_mnist.py --threads 8 "$@"
+~/.conda/envs/egem/bin/python -u repro/run_scenario.py --threads 8 "$@"

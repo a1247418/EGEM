@@ -26,7 +26,7 @@ conda create -p ~/.conda/envs/egem python=3.10
     torchvision==0.17.2 zennit==0.5.0 scikit-learn scipy "timm<1" frozendict "nptyping<2" pytorch_lightning
 # MNIST is downloaded with torchvision to ~/EGEM_work/data
 cd EGEM   # repo root
-python repro/run_mnist.py --scenario mnist-8 --refinement {none,retrain,ridge,rgem,egem,pcaegem} \
+python repro/run_scenario.py --scenario mnist-8 --refinement {none,retrain,ridge,rgem,egem,pcaegem} \
        --poisoning {none,uniform} --n_samples 700 --n_reps 5
 python repro/analyze.py --scenario mnist-8 --n 700 --slack 0.01 0.05   # paper's selection rule
 python repro/make_figures.py

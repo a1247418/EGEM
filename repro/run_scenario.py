@@ -1,4 +1,4 @@
-"""Driver for the MNIST-8 reproduction (Linhardt et al., EGEM). Run from repo root."""
+"""Driver for the EGEM reproduction: runs one scenario x refinement x poisoning level. Run from repo root."""
 import argparse, os, sys, time, pickle as pkl
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 sys.path.insert(0, os.path.join(ROOT, "src"))
