@@ -156,10 +156,10 @@ def load_scenario(
         "carton-envelope",
         "carton-all",
         "mtb-bbt",
-        "minst-8_rgb-blur",
-        "minst-8_rgb-artifact",
-        "minst-8_rgb-remove",
-        "minst-8_rgb-color",
+        "mnist-rgb-blur",
+        "mnist-rgb-artifact",
+        "mnist-rgb-remove",
+        "mnist-rgb-color",
     ]
     assert scenario_name in original_scenarios
 

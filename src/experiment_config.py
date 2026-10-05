@@ -65,16 +65,9 @@ def get_experiment_config(experiment_name: str, refinement: str):
             "batch_size": 128 if "mnist" in experiment_name else 16,
         })
     elif "mnist-rgb" in experiment_name:
-        if "artifact" in "experiment_name":
-            model_file_path = os.path.join("model_weights", "mnist-rgb-artifact.model")
-        elif "blur" in "experiment_name":
-            model_file_path = os.path.join("model_weights", "mnist-rgb-blur.model")
-        elif "remove" in "experiment_name":
-            model_file_path = os.path.join("model_weights", "mnist-rgb-remove.model")
-        elif "color" in "experiment_name":
-            model_file_path = os.path.join("model_weights", "mnist-rgb-color.model")
-        else:
-            model_file_path = None
+        variant = experiment_name.split("-")[-1]
+        assert variant in ("artifact", "blur", "remove", "color"), experiment_name
+        model_file_path = os.path.join("model_weights", f"mnist-rgb-{variant}.model")
 
         basic_config.update({
             "dataset": "mnist-rgb",

@@ -92,7 +92,7 @@ def get_data_loaders(scenario_name, data_root, exp):
     if exp["n_test"] is not None:
         kwargs.update({"val_set_size": exp["n_test"]})
 
-    if scenario_name == "mnist-8":
+    if "mnist" in scenario_name:
         kwargs["normalize"] = False
         print("###################################")
         print("WARNING: not normlizing MNIST-8!")

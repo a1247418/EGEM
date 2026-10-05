@@ -3,7 +3,8 @@ from typing import Optional, List
 
 import numpy as np
 import torch
-from torchvision.transforms import Resize
+from torchvision.transforms import Resize, Compose, Lambda
+from torchvision.transforms.functional import gaussian_blur
 from CH_datasets.datasets.splits import SingletonIndexStorage
 from CH_datasets.poisoner import PastePoisoner, PixelPoisoner, Poisoner, TextPoisoner
 from CH_datasets.scenario import Scenario, get_default_transform
@@ -194,6 +195,64 @@ class MNISTScenario(Scenario):
         )
 
 
+# --- RGB-MNIST variants of Sec. 5 ("MNIST Revisited"). The original poisoner code was not
+# released; these re-implementations were matched against the released mnist-rgb-*.model weights
+# (see repro/probe_mnist_rgb.py): each makes its own model classify many non-8 digits as 8.
+# Strengths were then calibrated so the unrefined models roughly match the 100%-poisoned accuracy of
+# Fig. 6 in the paper (blur ~0.91, color ~0.91, remove ~0.77); the artifact is the exact mnist-8 one.
+def _to_rgb(img: torch.Tensor) -> torch.Tensor:
+    return img.repeat(3, 1, 1) if img.shape[0] == 1 else img
+
+
+class MNISTRGBArtifactPoisoner(MNISTPoisoner):
+    def _poison(self, img: torch.Tensor) -> torch.Tensor:
+        return super()._poison(_to_rgb(img))
+
+
+class MNISTBlurPoisoner(Poisoner):
+    def __init__(self, p: float, classes: Optional[List[int]] = None, kernel_size: int = 5, sigma: float = 1.0):
+        super().__init__(p, classes, poison_before_tensor=False)
+        self.kernel_size, self.sigma = kernel_size, sigma
+
+    def _poison(self, img: torch.Tensor) -> torch.Tensor:
+        return gaussian_blur(_to_rgb(img), self.kernel_size, self.sigma)
+
+
+class MNISTColorPoisoner(Poisoner):
+    def __init__(self, p: float, classes: Optional[List[int]] = None, rgb=(0.85, 1.0, 1.0)):
+        super().__init__(p, classes, poison_before_tensor=False)
+        self.rgb = torch.tensor(rgb)[:, None, None]
+
+    def _poison(self, img: torch.Tensor) -> torch.Tensor:
+        return _to_rgb(img) * self.rgb
+
+
+class MNISTRemovePoisoner(Poisoner):
+    def __init__(self, p: float, classes: Optional[List[int]] = None, fraction: float = 0.28):
+        super().__init__(p, classes, poison_before_tensor=False)
+        self.fraction = fraction
+
+    def _poison(self, img: torch.Tensor) -> torch.Tensor:
+        img = _to_rgb(img).clone()
+        img[:, int(img.shape[1] * (1 - self.fraction)):] = 0
+        return img
+
+
+MNIST_RGB_POISONERS = {
+    "artifact": MNISTRGBArtifactPoisoner,
+    "blur": MNISTBlurPoisoner,
+    "color": MNISTColorPoisoner,
+    "remove": MNISTRemovePoisoner,
+}
+
+
+class MNISTRGBScenario(MNISTScenario):
+    def __init__(self, *args, normalize: bool = False, **kwargs):
+        assert not normalize, "The mnist-rgb models were trained on unnormalized [0, 1] inputs"
+        super().__init__(*args, normalize=False, **kwargs)
+        self.transform = Compose(list(self.transform.transforms) + [Lambda(_to_rgb)])
+
+
 class ISICPoisoner(PastePoisoner):
     def __init__(self, p: float, classes: Optional[List[int]] = None):
         super().__init__(
@@ -282,6 +341,15 @@ def get_scenario(
             8,
             [0, 1, 2, 3, 4, 5, 6, 7, 9],
             MNISTPoisoner,
+            normalize=normalize,
+            **kwargs,
+        )
+    elif scenario.startswith("mnist-rgb-"):
+        return MNISTRGBScenario(
+            dataset_path,
+            8,
+            [0, 1, 2, 3, 4, 5, 6, 7, 9],
+            MNIST_RGB_POISONERS[scenario[len("mnist-rgb-"):]],
             normalize=normalize,
             **kwargs,
         )
