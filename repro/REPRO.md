@@ -103,7 +103,11 @@ Likely causes:
 Hypotheses tested so far (exploratory, not in the paper's protocol):
 - *Spatial summing* (`--refiner_kwargs '{"spatial_sum": true}'`, as worded in the paper's Sec. 3.1, instead
   of the code's per-position statistics): no effect. Poisoned accuracy stays within ±0.01 of EGEM for every α.
-- *Scaling rule* (`flat`, `inverse-triangular` instead of `triangular`): see below once the runs finish.
+- *Scaling rule* (`flat`, `inverse-triangular` instead of `triangular`, i.e. pruning early layers as hard or
+  harder): poisoned accuracy never rises above the unpruned 0.626 at any α. At 5% slack, flat gets 0.615
+  and inverse-triangular 0.602, against 0.633 for the standard rule.
+- So with this retrained model, the ISIC CH feature is not separable by per-channel pruning; only the PCA
+  basis helps.
 
 Retrain is running at the paper's lr of 1e-7; a smoke test showed it does not change the model.
 
