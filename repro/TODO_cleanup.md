@@ -84,8 +84,9 @@ Items marked **[fixed on branch]** have a minimal fix applied; the rest are open
   imports relative to `src/` (run `python src/run.py` from the repo root), and `cxai` is imported
   lazily. Still open: make `src` a real package (e.g. `egem/`, with a `pyproject.toml`), and replace the
   `sys.modules` aliasing in `src/CH_datasets/__init__.py`.
-- `CH_datasets` is a git submodule over SSH (`git@github.com:...`) -> fails for anonymous clones;
-  switch to https.
+- **[fixed on branch]** `.gitmodules` declared `src/CH_datasets` as an SSH submodule, but the files are
+  vendored (tracked directly, no gitlink). The stale `.gitmodules` is removed. Changes to the vendored
+  copy (RGB-MNIST poisoners, splits fix) should be upstreamed to `a1247418/CH_datasets`.
 
 ## Performance
 - **[fixed on branch for EGEM/PCA-EGEM, via a one-entry cache in `EGEMRefiner`]** Every hyperparameter value re-extracts activations and re-fits PCA (`train_refinement` inside
