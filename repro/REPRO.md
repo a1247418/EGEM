@@ -80,13 +80,16 @@ method and poisoning level, 8–28 min each.
 | Method | clean | poisoned | paper clean / poisoned (read from Fig. 3) |
 |---|---|---|---|
 | Original | 0.800 ± 0.000 | 0.628 ± 0.000 | ≈ 0.80 / 0.645 |
+| Retrain | 0.812 ± 0.001 | 0.671 ± 0.003 | ≈ 0.82 / 0.65 |
 | Ridge | 0.786 ± 0.016 | 0.628 ± 0.008 | ≈ 0.80 / 0.69 |
 | RGEM | 0.797 ± 0.001 | 0.625 ± 0.001 | ≈ 0.81 / 0.65 |
 | EGEM | 0.794 ± 0.001 | 0.633 ± 0.003 | ≈ 0.77 / 0.735 |
 | PCA-EGEM | 0.792 ± 0.002 | **0.672 ± 0.007** | ≈ 0.80 / 0.765 |
 
-As in the paper, the original model relies on the colored patches (−17 points), and PCA-EGEM is the only
-method that clearly improves poisoned accuracy without losing clean accuracy. The size of the effect is
+As in the paper, the original model relies on the colored patches (−17 points). Among the pruning and
+regression methods, only PCA-EGEM clearly improves poisoned accuracy. Unlike in the paper, Retrain (lr 1e-7,
+selecting 100 epochs) is as robust as PCA-EGEM here (0.671 vs 0.672 poisoned) and gains clean accuracy.
+Its improvement grows steadily with the number of epochs. The size of the effect is
 not reproduced: +4.4 points instead of ≈ +12, and **EGEM does not help at all** (paper ≈ +9).
 - EGEM peaks at 0.639 poisoned for any α (α = 0.4) and collapses below α = 0.2.
 - PCA-EGEM is almost flat in α: it already reaches 0.682 at α = 0.99, so most of its gain comes from the
@@ -109,7 +112,6 @@ Hypotheses tested so far (exploratory, not in the paper's protocol):
 - So with this retrained model, the ISIC CH feature is not separable by per-channel pruning; only the PCA
   basis helps.
 
-Retrain is running at the paper's lr of 1e-7; a smoke test showed it does not change the model.
 
 ### Slack (paper Fig. 4 / Supp. G) — `figures/fig4_slack.png`
 
@@ -208,6 +210,6 @@ or of channel-summed conv maps (`scratch` experiment, 0.09–0.10 at Linear_2 fo
 1. ImageNet tasks (carton/crate/envelope/packet, mtb/bbt): they need the 6 classes plus validation (see
    `DATA.md` for ways to get only those) and a patch to `splits.py`, which addresses images by their
    position in the full list. Pretrained torchvision weights are fine. GPU shard jobs as for ISIC.
-2. ISIC: investigate why EGEM does not help (layer choice/scaling rule, refinement data overlapping the
-   training data); Retrain results are pending.
+2. ISIC: investigate why EGEM does not help. Spatial summing and the scaling rule are ruled out; the overlap
+   of refinement and training data remains a candidate.
 3. Work through the open items in `TODO_cleanup.md`.
