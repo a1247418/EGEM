@@ -2,7 +2,8 @@
 
 Target paper: Linhardt, Müller, Montavon, *Preemptively Pruning Clever-Hans Strategies in Deep
 Neural Networks*, Information Fusion 2024 (arXiv:2304.05727). The NLP use case is out of scope.
-Cleanup items found along the way are listed in [`TODO_cleanup.md`](TODO_cleanup.md).
+Cleanup items found along the way are listed in [`TODO_cleanup.md`](TODO_cleanup.md). How to get every dataset
+and model weight is in [`DATA.md`](DATA.md).
 
 ## Status
 
@@ -12,7 +13,7 @@ Cleanup items found along the way are listed in [`TODO_cleanup.md`](TODO_cleanup
 | MNIST-8, sample-size sweep (Supp. H) | **Reproduced** for Ridge / EGEM / PCA-EGEM, 5–700 samples per class |
 | MNIST CH variants, Fig. 6 | **Partly reproduced**: weights restored from git history; the poisoners were never released, so they are reconstructed and calibrated (see below) |
 | Sparsity, Fig. 7 | Partly: the Linear_1 column matches; MaxPool2d / Linear_2 do not |
-| ISIC, Fig. 3 | Blocked: ISIC 2019 data not downloaded, `isic_vgg16.model` never committed (needs retraining) |
+| ISIC, Fig. 3 | In progress: data downloaded and verified (`DATA.md`); `isic_vgg16.model` was never committed and is being retrained (`train_isic.py`) |
 | ImageNet carton/mtb, Fig. 3 | Blocked: needs ImageNet train+val for 6 classes (the data on the cluster is outside `$HOME`) |
 | CelebA, Sec. 6 | Not attempted (qualitative; `celeba_vgg16.model` is in git history) |
 

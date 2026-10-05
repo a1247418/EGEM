@@ -576,6 +576,7 @@ class RegressionRefiner(StaticRefiner):
         # TODO: automatically select -1/-2 based on bias?
         with torch.no_grad():
             for x, y in loader:
+                x = x.to(self.device)
                 for i, l in enumerate(embedder):
                     x = l(x)
                 xs.append(x)

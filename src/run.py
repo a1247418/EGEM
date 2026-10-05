@@ -251,7 +251,7 @@ def run_experiment(
         n_classes=n_classes,
         loader=refine_loader,
         n_reps=n_reps,
-        device=device,
+        device="cpu",  # all reps of refinement images do not fit on the GPU for 224px data; batches are moved later
     )
 
     # Evaluate

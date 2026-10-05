@@ -21,6 +21,9 @@ def layer_names_to_layers(model: torch.nn.Module, layer_names: List[str]):
     return layers
 
 
+MAX_SPATIAL_ROWS = 100000  # conv activations are subsampled to this many (position, channel) rows
+
+
 def captured_to_list(layer_names, captured, reduce_spatial=True, del_captured=True, divisor=1.):
     cs = []
     for l in layer_names:
@@ -30,8 +33,8 @@ def captured_to_list(layer_names, captured, reduce_spatial=True, del_captured=Tr
             #cs[-1] = torch.mean(cs[-1], dim=[-2, -1]) # alternative: avg pooling
             cs[-1] = cs[-1].permute(1,0,2,3).reshape([cs[-1].shape[1], -1]).T # [bs, n_channels, h, w] -> [bs*h*w, n_channels]
             # if too many, subsample:
-            if cs[-1].shape[0] > 100000:
-                idxs = torch.randperm(cs[-1].shape[0])[:100000]
+            if cs[-1].shape[0] > MAX_SPATIAL_ROWS:
+                idxs = torch.randperm(cs[-1].shape[0])[:MAX_SPATIAL_ROWS]
                 cs[-1] = cs[-1][idxs]
 
     if del_captured:
@@ -80,6 +83,11 @@ def get_activations(
     layers = layer_names_to_layers(model, layer_names)
 
     capture_explanations = explainer is not None
+    # Number of samples to spread MAX_SPATIAL_ROWS over; None = keep full conv maps (needed when the
+    # activations must stay aligned with explanations, or when spatial dimensions are not reduced)
+    spatial_keep = None
+    if reduce_spatial and not capture_explanations and not avg_on_the_fly and hasattr(loader, "dataset"):
+        spatial_keep = len(loader.dataset)
 
     def capture_activations(module, input, output, captured_activations):
         # input is a tuple with the first element being the input Tensor
@@ -115,7 +123,14 @@ def get_activations(
         else:
             # Conv layer
             # TODO, make adapt with batch dim, and set default to 0
-            captured_activations.append(activations[0].clone())#.sum(dim=[-2, -1]).clone())
+            if spatial_keep is not None:
+                # Subsample spatial positions per batch, as captured_to_list would do afterwards anyway;
+                # keeping full maps of all samples does not fit in GPU memory for VGG-16 at 224px.
+                rows = activations[0].permute(0, 2, 3, 1).reshape(-1, activations[0].shape[1])
+                k = min(rows.shape[0], -(-MAX_SPATIAL_ROWS * activations[0].shape[0] // spatial_keep))
+                captured_activations.append(rows[torch.randperm(rows.shape[0], device=rows.device)[:k]].clone())
+            else:
+                captured_activations.append(activations[0].clone())#.sum(dim=[-2, -1]).clone())
 
         if avg_on_the_fly:
             if len(captured_activations)==1:
