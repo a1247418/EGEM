@@ -1,6 +1,5 @@
 import os
 import copy
-import pdb
 from typing import Optional, List, Dict, Tuple
 import torch
 import numpy as np
@@ -1417,7 +1416,6 @@ class PEGEMRefiner(StaticRefiner):
                     #print(y)
                     #print("Out:", att_out[0], "\nSumR:", r_mat[0].sum(), "\nSumR^m:", (r_mat[0]*cls_mask[0]).sum(),"\nOut - SumR:", att_out[0][y]-r_mat[0].sum())
                     #print("r_mat shape", r_mat.shape, "cls_mask shape", cls_mask.shape)
-                    #pdb.set_trace()
                     att_out[:, y] -= (
                         torch.sum(
                             torch.reshape(r_mat * (1-cls_mask.to(r_mat.dtype)), (r_mat.shape[0], -1)), dim=1

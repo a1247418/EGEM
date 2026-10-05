@@ -100,8 +100,8 @@ Items marked **[fixed on branch]** have a minimal fix applied; the rest are open
 - Five large Colab notebooks at the root (`CEGEM_*.ipynb`, `Per_digt_EGEM_*.ipynb`, ~2.9 MB with
   outputs) are later student experiments (CEGEM, per-digit EGEM), not part of the paper ->
   move to `experiments/` or a separate branch, strip outputs.
-- Dead code: commented-out `_get_balanced_data` in `data_loading.py` ("TODO: remove"),
-  `get_default_layer_names` ("TODO: remove?"), `PCAMultiplierNet` (incomplete), `pdb` imports,
-  NLP/ViT paths (out of scope for the vision reproduction).
+- **[fixed on branch]** Dead code removed: the commented-out `_get_balanced_data` in `data_loading.py`,
+  the unused `get_default_layer_names`, and the `pdb` import. Still open: `PCAMultiplierNet` is incomplete
+  (conv not implemented) but is used by `PCATruncRefiner`; the NLP/ViT paths are untested here.
 - `run.py` writes results to a relative `results/` folder; refiners pickle `self.mods` with
   live tensors on the training device.
