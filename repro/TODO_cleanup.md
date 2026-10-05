@@ -30,8 +30,9 @@ Items marked **[fixed on branch]** have a minimal fix applied; the rest are open
 - `run.py` verbose plotting hard-codes `device="cuda"`.
 
 ## Paper/code mismatches to resolve or document
-- Paper: refinement data = only **correctly predicted** clean samples, 700 per class with
-  oversampling. Code: `evaluation.get_n_shot_data` takes any samples (no correctness filter).
+- **[option on branch]** Paper: refinement data = only **correctly predicted** clean samples, 700 per
+  class with oversampling. Code: `evaluation.get_n_shot_data` took any samples. Now `--correct_only`
+  (off by default, so existing results are unchanged).
 - Paper (Supp. F.3) alpha grid {1e-5, 1e-4, 1e-3, 0.01, 0.1, ..., 0.9, 1};
   `experiment_config.get_refinement_hyperparams` uses {0.001, 0.01, 0.1, ..., 0.9, 0.99}.
 - **[fixed on branch]** Paper Ridge/RGEM lambda grid {1e-4 ... 1e4}; code used {1e-3 ... 1e6}. The grid is now the

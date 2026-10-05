@@ -97,13 +97,22 @@ def evaluate(model, data_loader, device: str = "cuda", verbose=False):
     return to_return
 
 
-def get_balanced_data(n_shot: int, n_classes: int, loader, device: str = "cuda") -> Tuple[Tensor, Tensor]:
-    """Get a balanced n-shot data sample from the given loader."""
+def get_balanced_data(n_shot: int, n_classes: int, loader, device: str = "cuda",
+                      model=None) -> Tuple[Tensor, Tensor]:
+    """Get a balanced n-shot data sample from the given loader. If a model is given, only samples it
+    predicts correctly are used (the paper's simulated user verification, Sec. 4.3)."""
     n_per_class = {i: 0 for i in range(n_classes)}
     imgs = []
     targets = []
     stop = False
     for xs, ys in loader:
+        if model is not None:
+            with torch.no_grad():
+                model_device = next(model.parameters()).device
+                correct = model(xs.to(model_device)).argmax(1).cpu() == ys
+            xs, ys = xs[correct], ys[correct]
+            if len(ys) == 0:
+                continue
         if torch.numel(ys) == 1:
             xs = [xs[0]]
             ys = [ys[0]]
@@ -140,13 +149,13 @@ def get_balanced_data(n_shot: int, n_classes: int, loader, device: str = "cuda")
 
 
 def get_n_shot_data(
-    n_shot: int, n_classes: int, loader, n_reps: int = 1, device: str = "cuda"
+    n_shot: int, n_classes: int, loader, n_reps: int = 1, device: str = "cuda", model=None
 ) -> Tuple[List[Tensor], List[Tensor]]:
     refine_targets = []
     refine_images = []
     for rep in range(n_reps):
         refine_imgs, refine_labels = get_balanced_data(
-            n_classes=n_classes, n_shot=n_shot, loader=loader, device=device
+            n_classes=n_classes, n_shot=n_shot, loader=loader, device=device, model=model
         )
         refine_targets.append(refine_labels.to(device).detach())
         refine_images.append(refine_imgs.to(device).detach())

@@ -18,13 +18,14 @@ p.add_argument("--explanation_type", default=None)
 p.add_argument("--threads", type=int, default=4)
 p.add_argument("--refiner_kwargs", default=None, help='JSON, e.g. \'{"spatial_sum": true}\'')
 p.add_argument("--tag", default=None, help="variant name; results are saved as <refinement>+<tag>")
+p.add_argument("--correct_only", action="store_true", help="refine only on correctly predicted samples")
 p.add_argument("--num_workers", type=int, default=8, help="data loader workers")
 a = p.parse_args()
 torch.set_num_threads(a.threads)
 os.makedirs(a.out, exist_ok=True)
 t = time.time()
 res = run_experiment(scenario_name=a.scenario, data_root=a.data_root, refinement=a.refinement,
-                     n_reps=a.n_reps, n_samples=a.n_samples, poisoning_strategy=a.poisoning, num_workers=a.num_workers, refiner_kwargs=a.refiner_kwargs,
+                     n_reps=a.n_reps, n_samples=a.n_samples, poisoning_strategy=a.poisoning, num_workers=a.num_workers, refiner_kwargs=a.refiner_kwargs, correct_only=a.correct_only,
                      **({"explanation_type": a.explanation_type} if a.explanation_type else {}))
 for sel in select_by_slack(res, a.refinement, 0.05):
     print(f"Selected (5% slack): rep {sel['rep']}, test top-1 {float(sel['top1'][0]):.4f}")

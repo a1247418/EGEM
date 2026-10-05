@@ -61,6 +61,7 @@ def parseargs():
     aa("--subfolder", type=str, default=None)
     aa("--skip_existing", action="store_true")
     aa("--num_workers", type=int, default=8, help="Data loader workers")
+    aa("--correct_only", action="store_true", help="Refine only on correctly predicted samples (paper Sec. 4.3)")
     aa("--slack", type=float, default=0.05, help="Slack for the paper's hyperparameter selection (Sec. 4.5)")
     args = parser.parse_args()
     return args
@@ -258,6 +259,7 @@ def run_experiment(
         loader=refine_loader,
         n_reps=n_reps,
         device="cpu",  # all reps of refinement images do not fit on the GPU for 224px data; batches are moved later
+        model=model if exp["correct_only"] else None,
     )
 
     # Evaluate
@@ -470,7 +472,8 @@ if __name__ == "__main__":
             refiner_kwargs=args.refiner_kwargs,
             explanation_type=args.explanation_type,
             decomposition_type=args.decomposition_type,
-            num_workers=args.num_workers
+            num_workers=args.num_workers,
+            correct_only=args.correct_only
     )
 
     for sel in select_by_slack(results, args.refinement, args.slack):
