@@ -50,16 +50,42 @@ This writes `model_weights/isic_vgg16.model`, the path `experiment_config.py` ex
 
 ## ImageNet (scenarios `carton-crate`, `carton-envelope`, `carton-packet`, `mtb-bbt`) — not done yet
 
-- The models are torchvision's ImageNet-pretrained ResNet-50 and VGG-16, downloaded automatically to
-  `~/.cache/torch/hub/checkpoints`.
-- The data must be the **full ILSVRC-2012** set in `torchvision.datasets.ImageNet` layout:
-  `root/ILSVRC2012_devkit_t12.tar.gz`, plus `train/` and `val/` (or the original tarballs, which
-  torchvision unpacks).
-- A 6-class subset does **not** work out of the box. `splits.py` stores the manually labelled
-  watermark/frame images as offsets into the full torchvision target list.
-- Getting ImageNet requires an image-net.org account and accepting its terms. Hugging Face
-  `ILSVRC/imagenet-1k` is gated in the same way. The user must provide access or point to an existing copy.
-- Classes used: carton 478, crate 519, envelope 549, packet 692, mountain bike 671, bicycle-built-for-two 444.
+The models are torchvision's ImageNet-pretrained ResNet-50 and VGG-16 (downloaded automatically to
+`~/.cache/torch/hub/checkpoints`). For the data, **only the six classes are needed** (about 0.8 GB):
+
+| class id | wnid | name |
+|---|---|---|
+| 444 | n02835271 | bicycle-built-for-two |
+| 478 | n02971356 | carton |
+| 519 | n03127925 | crate |
+| 549 | n03291819 | envelope |
+| 671 | n03792782 | mountain bike |
+| 692 | n03871628 | packet |
+
+Expected layout, i.e. `torchvision.datasets.ImageNet` with only these class folders
+(`--data_root <root>`):
+```
+<root>/meta.bin    # or ILSVRC2012_devkit_t12.tar.gz, from which torchvision builds meta.bin
+<root>/train/n02971356/n02971356_*.JPEG ...   # complete class folders, original file names
+<root>/val/n02971356/ILSVRC2012_val_*.JPEG ...  # the 50 val images per class, sorted into wnid folders
+```
+The hand-labelled watermark/frame images are stored as positions *within* each class
+(`CH_datasets/datasets/splits.py`). So the class folders must be complete and keep their original file
+names. Labels of a subset copy are mapped back to the official class ids through the devkit's wnid
+list. Both steps were tested on a fake six-class tree.
+
+Ways to get only these classes (all need an ImageNet account that has accepted the terms):
+- **Range requests on `ILSVRC2012_img_train.tar`**: it is a tar of 1,000 per-class tars. Read only the
+  512-byte headers, then download the 6 inner tars (~0.8 GB). This needs a server that honours HTTP
+  `Range`; not verified for image-net.org.
+- **Kaggle** `imagenet-object-localization-challenge`: per-class folders, single files via
+  `kaggle competitions download -f ...` (slow for ~7.8k files).
+- **Hugging Face** `ILSVRC/imagenet-1k`, streamed and filtered by label: nothing extra is stored, but
+  all ~150 GB are downloaded.
+- An existing ImageNet copy: copy the six class folders and the devkit/meta file.
+
+The validation set (`ILSVRC2012_img_val.tar`, 6.3 GB) is a flat folder. torchvision sorts it into wnid
+folders using the devkit when given the tar; afterwards only the six folders need to be kept.
 
 ## CelebA (Sec. 6, not attempted)
 

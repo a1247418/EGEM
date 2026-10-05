@@ -55,3 +55,17 @@ def make_poisonable(dataset_class: type):
     return type(dataset_class.__name__, (dataset_class,), {
         '__getitem__': __getitem__,
     })
+
+
+def to_official_imagenet_targets(dataset):
+    """A copy of ImageNet with only some class folders gets folder-order targets (0..n-1). Maps them to the
+    official class index, i.e. the position of the wnid among all 1000 sorted wnids of the devkit meta file."""
+    from torchvision.datasets.imagenet import load_meta_file
+    all_wnids = sorted(load_meta_file(dataset.root)[0].keys())
+    if list(dataset.wnids) == all_wnids:
+        return dataset
+    official = [all_wnids.index(w) for w in dataset.wnids]
+    dataset.samples = [(path, official[t]) for path, t in dataset.samples]
+    dataset.imgs = dataset.samples
+    dataset.targets = [official[t] for t in dataset.targets]
+    return dataset

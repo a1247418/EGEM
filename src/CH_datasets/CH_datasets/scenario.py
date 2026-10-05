@@ -6,14 +6,14 @@ from torch.utils.data import Subset
 
 from CH_datasets.poisoner import Poisoner
 from CH_datasets.datasets.isic import ISICDataset
-from CH_datasets.datasets.utils import make_poisonable
+from CH_datasets.datasets.utils import make_poisonable, to_official_imagenet_targets
 
 
 def get_dataset(dataset: str, dataset_dir: str, train: bool = True):
     if dataset == "imagenet":
-        dataset_instance = make_poisonable(ImageNet)(
+        dataset_instance = to_official_imagenet_targets(make_poisonable(ImageNet)(
             split="train" if train else "val", root=dataset_dir
-        )
+        ))
     elif dataset == "mnist":
         dataset_instance = make_poisonable(MNIST)(train=train, root=dataset_dir, download=True)
     elif dataset == "isic":
