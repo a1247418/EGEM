@@ -290,7 +290,15 @@ class EGEMRefiner(StaticRefiner):
         assert self.do_pca or self.pca_dims is None
         assert self.scaling_rule in ["triangular", "flat", "inverse-triangular"]
 
+    # Activations and PCA do not depend on alpha, so the hyperparameter search would otherwise redo the
+    # (expensive) PCA fit for every alpha. Holds strong references so object identity stays valid.
+    _cache = None
+
     def _extract_values(self, layer_names: List[str], loader: DataLoader) -> Dict:
+        key = (self.model, loader, tuple(layer_names), self.do_pca, self.pca_dims)
+        cache = EGEMRefiner._cache
+        if not self.iterative and cache is not None and all(a is b or a == b for a, b in zip(cache[0], key)):
+            return cache[1]
         a_squared, pca_X, pca_V = get_activations(
             model=self.model,
             layer_names=layer_names,
@@ -307,7 +315,10 @@ class EGEMRefiner(StaticRefiner):
             silent=True,
         )
         print("a_squared:", [a.shape for a in a_squared])
-        return {"a_squared": a_squared, "pca_X": pca_X, "pca_V": pca_V}
+        values = {"a_squared": a_squared, "pca_X": pca_X, "pca_V": pca_V}
+        if not self.iterative:
+            EGEMRefiner._cache = (key, values)
+        return values
 
     def _train_refinement_unit(
         self,
