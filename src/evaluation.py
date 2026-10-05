@@ -117,8 +117,8 @@ def get_balanced_data(n_shot: int, n_classes: int, loader, device: str = "cuda")
                 if np.sum([v for v in n_per_class.values()]) == n_shot * n_classes:
                     stop = True
                     break
-            if stop:
-                break
+        if stop:
+            break
 
     for c, n_c in n_per_class.items():
         if n_c < n_shot:
