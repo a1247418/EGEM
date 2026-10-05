@@ -102,6 +102,15 @@ Likely causes:
 
 Retrain is running at the paper's lr of 1e-7; a smoke test showed it does not change the model.
 
+### Slack (paper Fig. 4 / Supp. G) — `figures/fig4_slack.png`
+
+Test accuracy of the selected hyperparameter as the slack goes from 0 to 7% (700 samples/class).
+- **MNIST-8:** as in the paper, more slack trades a little clean accuracy for robustness. EGEM, PCA-EGEM
+  and Retrain are near 0.97 poisoned for any slack ≥ 1%. Ridge and RGEM need ≥ 4% to reach ~0.88.
+- **ISIC:** PCA-EGEM's poisoned accuracy is highest at 0% slack (0.682) and *decreases* with more slack.
+  Stronger pruning does not remove more of the CH effect here. This is consistent with the gain coming
+  from the PCA projection rather than from α.
+
 ### Sample-size sweep (Supp. H), MNIST-8 — `figures/figH_samples.png`
 
 | samples/class | EGEM | PCA-EGEM | Ridge | RGEM | Retrain |

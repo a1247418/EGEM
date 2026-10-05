@@ -79,3 +79,26 @@ for ax, p, title in [(axs[0], "none", "clean test data"), (axs[1], "uniform", "1
 axs[0].set_ylabel("Test accuracy (5% slack)"); axs[1].legend(frameon=False, loc="center left", bbox_to_anchor=(1.02, 0.5))
 fig.tight_layout(); fig.savefig(f"{OUT}/figH_samples.png", dpi=150)
 print("wrote", os.listdir(OUT))
+
+# Fig. 4 / Supp. G: accuracy as a function of the selection slack (0-7%)
+slacks = np.arange(0, 0.0701, 0.01)
+fig, axs = plt.subplots(2, 2, figsize=(10.5, 6), sharex=True)
+for row, scen in enumerate(["mnist-8", "isic-1"]):
+    df = load(RES, 700, 5, scen)
+    for col, (p, title) in enumerate([("none", "clean"), ("uniform", "100%-poisoned")]):
+        ax = axs[row, col]
+        for m, c in colors.items():
+            dm = df[(df.method == m) & (df.poisoning == p)]
+            if len(dm):
+                ys = [select(dm, sl).top1.mean() for sl in slacks]
+                ax.plot(slacks * 100, ys, color=c, lw=2, marker="o", ms=4, label=METHODS[m])
+        ax.axhline(df[(df.method == "none") & (df.poisoning == p)].top1.mean(), color=MUTED, ls="--", lw=1,
+                   label="Original")
+        ax.set_title(f"{'MNIST-8' if scen == 'mnist-8' else 'ISIC'}, {title} test data", color=INK, fontsize=10)
+        ax.yaxis.grid(True, color="#e4e3df", linewidth=0.6)
+    axs[row, 0].set_ylabel("Test accuracy")
+for ax in axs[1]:
+    ax.set_xlabel("slack (%)")
+axs[0, 1].legend(frameon=False, loc="center left", bbox_to_anchor=(1.02, 0.5))
+fig.tight_layout(); fig.savefig(f"{OUT}/fig4_slack.png", dpi=150)
+print("wrote fig4_slack.png")
