@@ -55,7 +55,7 @@ Items marked **[fixed on branch]** have a minimal fix applied; the rest are open
   (paper grid, normalized lambda). No lambda in the grid gets there. Possible causes: the paper's MNIST net (Table E.2: FC 200)
   or the correctly-predicted-only refinement data.
 
-- `CH_datasets/datasets/splits.py`: the test split's `"dirty"` entry is set to the *train* dirty indices,
+- **[fixed on branch]** `CH_datasets/datasets/splits.py`: the test split's `"dirty"` entry is set to the *train* dirty indices,
   for both ImageNet (`imagenet_train_dirty`) and ISIC (`isic_train_dirty`). This is currently harmless, because
   only `test["clean"]` is used, but `test["all"]` is wrong.
 - `src/run_training.py` / `models/training.py`: `PLModel.configure_optimizers` ignores `--lr` and
@@ -68,7 +68,8 @@ Items marked **[fixed on branch]** have a minimal fix applied; the rest are open
 - Model weights: only `mnist.model` at HEAD. `mnist-rgb-*.model` and `celeba_vgg16.model`
   exist only in git history (`e9b127c`, deleted in `d896bad`); ISIC weights never committed.
   ImageNet experiments use torchvision pretrained weights (fine).
-- Datasets: no download helper. MNIST loader in CH_datasets has no `download=True`. **[documented on branch]**
+- Datasets: no download helper. **[fixed on branch]** The MNIST loader in CH_datasets now has `download=True`;
+  the other datasets are **[documented on branch]**:
   `repro/DATA.md` gives the download commands and the expected layout.
   ImageNet needs a local copy (6 classes only); ISIC 2019 must be downloaded manually.
 - No fixed seeds for PCA (`torch.pca_lowrank` is randomized) -> reps are not bit-reproducible.

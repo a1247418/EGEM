@@ -15,7 +15,7 @@ def get_dataset(dataset: str, dataset_dir: str, train: bool = True):
             split="train" if train else "val", root=dataset_dir
         )
     elif dataset == "mnist":
-        dataset_instance = make_poisonable(MNIST)(train=train, root=dataset_dir)
+        dataset_instance = make_poisonable(MNIST)(train=train, root=dataset_dir, download=True)
     elif dataset == "isic":
         dataset_instance = make_poisonable(ISICDataset)(train=train, root=dataset_dir)
     else:

@@ -15,10 +15,7 @@ conda create -p ~/.conda/envs/egem python=3.10
 
 ## MNIST (scenarios `mnist-8`, `mnist-rgb-*`)
 
-The `CH_datasets` loader does not download, so fetch the data once with torchvision:
-```bash
-~/.conda/envs/egem/bin/python -c "import torchvision as tv; [tv.datasets.MNIST('$HOME/EGEM_work/data', train=t, download=True) for t in (True, False)]"
-```
+The `CH_datasets` loader downloads MNIST with torchvision on first use.
 Layout: `~/EGEM_work/data/MNIST/raw/*-ubyte` (about 55 MB). Pass `--data_root ~/EGEM_work/data`.
 
 ## ISIC 2019 (scenario `isic-1`)

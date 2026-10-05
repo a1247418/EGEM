@@ -138,7 +138,7 @@ class SingletonIndexStorage(object):
                     },
                     "test": {
                         "clean": imagenet_test_clean,
-                        "dirty": imagenet_train_dirty
+                        "dirty": imagenet_test_dirty
                     }
                 },
                 "isic": {
@@ -148,7 +148,7 @@ class SingletonIndexStorage(object):
                     },
                     "test": {
                         "clean": isic_test_clean,
-                        "dirty": isic_train_dirty
+                        "dirty": isic_test_dirty
                     }
                 }
             }
