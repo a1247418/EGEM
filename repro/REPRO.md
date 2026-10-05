@@ -14,25 +14,25 @@ and model weight is in [`DATA.md`](DATA.md).
 | MNIST CH variants, Fig. 6 | **Partly reproduced**: weights restored from git history; the poisoners were never released, so they are reconstructed and calibrated (see below) |
 | Sparsity, Fig. 7 | Partly: the Linear_1 column matches; MaxPool2d / Linear_2 do not |
 | ISIC, Fig. 3 | **Partly reproduced**: retrained model matches the original's accuracy; PCA-EGEM helps (+4 vs ≈+12 points), EGEM does not |
-| ImageNet carton/mtb, Fig. 3 | Blocked: needs ImageNet train+val for 6 classes (the data on the cluster is outside `$HOME`) |
+| ImageNet carton/mtb, Fig. 3 | Blocked: needs ImageNet train+val for 6 classes (no copy available; see `DATA.md`) |
 | CelebA, Sec. 6 | Not attempted (qualitative; `celeba_vgg16.model` is in git history) |
 
 ## How to run
 
 ```bash
-# environment (the shared `fv` env has a numpy-2/matplotlib ABI clash)
 conda create -p ~/.conda/envs/egem python=3.10
-~/.conda/envs/egem/bin/pip install "numpy<2" pandas Pillow tqdm matplotlib seaborn torch==2.2.2 \
-    torchvision==0.17.2 zennit==0.5.0 scikit-learn scipy "timm<1" frozendict "nptyping<2" pytorch_lightning
-# MNIST is downloaded with torchvision to ~/EGEM_work/data
+~/.conda/envs/egem/bin/pip install -r src/requirements.txt
+# data: see DATA.md (MNIST downloads itself)
 cd EGEM   # repo root
 python repro/run_scenario.py --scenario mnist-8 --refinement {none,retrain,ridge,rgem,egem,pcaegem} \
        --poisoning {none,uniform} --n_samples 700 --n_reps 5
 python repro/analyze.py --scenario mnist-8 --n 700 --slack 0.01 0.05   # paper's selection rule
 python repro/make_figures.py
 ```
-Everything runs on CPU. One EGEM/Ridge/RGEM run (5 reps × 9–12 hyperparameters) takes 1–5 min, Retrain about 13 min. PCA-EGEM takes
-3–10 min per rep, dominated by sklearn's full SVD.
+MNIST runs on CPU: one EGEM/Ridge/RGEM run (5 reps × 9–12 hyperparameters) takes 1–5 min, Retrain about
+3 min, and PCA-EGEM a few minutes per rep. ISIC runs on a GPU shard via
+`sbatch repro/run_gpu.sbatch --scenario isic-1 --data_root ~/EGEM_work/data/isic --refinement <m> --poisoning <p>`
+(8–28 min per run).
 
 **Hyperparameter selection.** Every run evaluates the whole hyperparameter grid. The reported value
 follows the paper's rule (Sec. 4.5, `src/selection.py`): per rep, take the strongest refinement whose
