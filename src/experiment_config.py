@@ -97,15 +97,17 @@ def get_experiment_config(experiment_name: str, refinement: str):
     elif "celeba" in experiment_name:
         basic_config.update({
             "dataset": "celeba",
-            "model_name": "vgg16_short10_2",
+            "model_name": "vgg16_celeba",
+            "model_file_path": os.path.join("model_weights", "celeba_vgg16.model"),
             "n_refine": 200,
             "n_test": 5000,
-            "layer_names": ['features.5.0.conv1', 'features.10'] if refinement in ("pegem", "pep") else [
-                'features.4.0.conv1',
-                'features.5.0.conv1',
-                'features.6.0.conv1',
-                'features.7.0.conv1',
-                'features.10'
+            # after every VGG block and after every ReLU outside them (paper Supp. F.3)
+            "layer_names": ['features.17', 'features.23'] if refinement in ("pegem", "pep") else [
+                'features.5',
+                'features.10',
+                'features.17',
+                'features.20',
+                'features.23'
             ],
             "target_class": 1,
             "background_classes": [0,],

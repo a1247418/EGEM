@@ -20,6 +20,7 @@ import torchvision
 from torch.utils.data import DataLoader, TensorDataset, Subset
 from torchvision.transforms import Compose, Normalize, ToTensor
 
+from experiment_config import get_experiment_config
 from models.model_loading import load_model
 from refinement.explainer import Explainer
 from refinement.refiner import EGEMRefiner
@@ -38,7 +39,7 @@ a = p.parse_args()
 torch.manual_seed(0); np.random.seed(0)
 dev = "cuda" if torch.cuda.is_available() else "cpu"
 BLOND = 9
-LAYERS = ["features.5", "features.10", "features.17", "features.20", "features.23"]
+LAYERS = get_experiment_config("celeba", "pcaegem")["layer_names"]
 
 # Hair mask (rows x cols of the 218x178 aligned images), read off Fig. F.12
 MASK = torch.zeros(218, 178, dtype=torch.bool)

@@ -93,6 +93,10 @@ Items marked **[fixed on branch]** have a minimal fix applied; the rest are open
   vendored (tracked directly, no gitlink). The stale `.gitmodules` is removed. Changes to the vendored
   copy (RGB-MNIST poisoners, splits fix) should be upstreamed to `a1247418/CH_datasets`.
 
+- **[partly fixed on branch]** `experiment_config.py`'s CelebA entry named a non-existent model
+  (`vgg16_short10_2`) and ResNet layer names; it now uses `vgg16_celeba` and its layers. CelebA is still not
+  a `run.py` scenario; the paper's Sec. 6 analysis is `repro/celeba_sec6.py`.
+
 ## Performance
 - **[fixed on branch for EGEM/PCA-EGEM, via a one-entry cache in `EGEMRefiner`]** Every hyperparameter value re-extracts activations and re-fits PCA (`train_refinement` inside
   the alpha loop), although both are independent of alpha -> cache once per rep. PCA-EGEM on
