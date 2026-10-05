@@ -3,7 +3,7 @@ CH poisoners, which are missing from the repo. A candidate that makes a model ca
 is likely close to the feature that model was trained with."""
 import os, sys
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-sys.path[:0] = [os.path.join(ROOT, "src"), ROOT]
+sys.path.insert(0, os.path.join(ROOT, "src"))
 import torch, torchvision
 import torchvision.transforms.functional as TF
 from models.model_loading import load_model

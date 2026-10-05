@@ -3,8 +3,8 @@ import torchvision
 
 import timm
 
-from cxai import models, explainers
-from cxai import utils as putils
+from refinement.decomposition.cxai import models, explainers
+from refinement.decomposition.cxai import utils as putils
 
 AVAILABLE_ARCHITECTURES = [
     "dm_nfnet_f0",

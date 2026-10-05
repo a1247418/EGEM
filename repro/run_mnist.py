@@ -1,8 +1,7 @@
 """Driver for the MNIST-8 reproduction (Linhardt et al., EGEM). Run from repo root."""
 import argparse, os, sys, time, pickle as pkl
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-# src mixes "x", "src.x" and bare "cxai" imports, so all three roots are needed
-sys.path[:0] = [os.path.join(ROOT, "src"), ROOT, os.path.join(ROOT, "src", "refinement", "decomposition")]
+sys.path.insert(0, os.path.join(ROOT, "src"))
 import torch
 from run import run_experiment
 from selection import select_by_slack

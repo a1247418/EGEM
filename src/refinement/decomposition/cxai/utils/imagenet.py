@@ -3,7 +3,7 @@ import pandas as pd
 
 from frozendict import frozendict
 
-from cxai import constants
+from refinement.decomposition.cxai import constants
 
 
 # todo: perhaps, this module should be in cxai/data/imagenet

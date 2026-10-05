@@ -7,7 +7,7 @@ Resize(224)+CenterCrop(224) as the evaluation transform. Step 2 (GPU job): train
 """
 import argparse, os, sys, time
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-sys.path[:0] = [os.path.join(ROOT, "src"), ROOT, os.path.join(ROOT, "src", "CH_datasets")]
+sys.path.insert(0, os.path.join(ROOT, "src"))
 import numpy as np
 import torch
 import torch.nn.functional as F

@@ -79,9 +79,11 @@ Items marked **[fixed on branch]** have a minimal fix applied; the rest are open
   Most come from the vendored `cxai` decomposition code, which is imported unconditionally by
   `run.py` even when no decomposition is used -> make that import lazy.
 - `numpy<2` is required (matplotlib/torch 2.2 wheels built against numpy 1.x); pin it.
-- Imports are inconsistent: `refinement.*`, `src.refinement.*` (explainer.py:11) and bare `cxai.*`
-  are all used, so three different `sys.path` roots are needed. Make `src` a proper package
-  (e.g. `egem/`) with a `pyproject.toml`, and use relative or package-absolute imports.
+- **[fixed on branch]** Imports were inconsistent: `refinement.*`, `src.refinement.*` (explainer.py:11)
+  and bare `cxai.*` were all used, so three different `sys.path` roots were needed. Now everything
+  imports relative to `src/` (run `python src/run.py` from the repo root), and `cxai` is imported
+  lazily. Still open: make `src` a real package (e.g. `egem/`, with a `pyproject.toml`), and replace the
+  `sys.modules` aliasing in `src/CH_datasets/__init__.py`.
 - `CH_datasets` is a git submodule over SSH (`git@github.com:...`) -> fails for anonymous clones;
   switch to https.
 

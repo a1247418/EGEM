@@ -23,7 +23,6 @@ from refinement.refiner import (
     PEGEMRefiner
 )
 from refinement.helpers import (get_activations, calculate_sensitivity)
-from refinement.decomposition.decomposer import (IdentityDecomposer, PCADecomposer, PRCADecomposer, DRSADecomposer)
 from models.model_loading import load_model
 from experiment_config import get_experiment_config, get_refinement_hyperparams, get_decomposition_config
 from refinement.explainer import Explainer
@@ -135,6 +134,9 @@ def get_decomposer(dec_name: str,
                    data_loader: Optional[torch.utils.data.DataLoader] = None,
                    path: Optional[str] = None,
                    device: str = "cuda"):
+    # Imported here: the vendored cxai code needs extra dependencies (timm, nptyping, ...)
+    from refinement.decomposition.decomposer import (IdentityDecomposer, PCADecomposer, PRCADecomposer,
+                                                     DRSADecomposer)
     dec_map = {dc.__name__.lower().replace("decomposer", ""): dc for dc in
                [IdentityDecomposer, PCADecomposer, PRCADecomposer, DRSADecomposer]}
     if dec_name not in dec_map:

@@ -4,8 +4,8 @@ import torch
 import torchvision
 import numpy as np
 
-from cxai.inspector import Inspector, InspectionRelevanceInfo
-from cxai import models
+from refinement.decomposition.cxai.inspector import Inspector, InspectionRelevanceInfo
+from refinement.decomposition.cxai import models
 
 
 class WithSplitModelMixin:

@@ -8,7 +8,7 @@ from zennit.types import Convolution
 from zennit.rules import AlphaBeta
 from zennit.core import Composite
 
-from src.refinement.lrp_resnet import module_map_resnet
+from refinement.lrp_resnet import module_map_resnet
 
 
 class AlphaBetaComposite(LayerMapComposite):

@@ -8,7 +8,7 @@ import numpy as np
 import torch
 
 
-from cxai import netdissect, constants
+from refinement.decomposition.cxai import netdissect, constants
 
 from .base import *
 

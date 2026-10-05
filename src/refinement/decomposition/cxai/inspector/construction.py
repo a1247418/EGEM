@@ -5,7 +5,7 @@ from nptyping import NDArray
 
 import numpy as np
 
-from cxai import netdissect, utils as putils
+from refinement.decomposition.cxai import netdissect, utils as putils
 
 from .base import Inspector
 from .bases.random import RandomBasisInspector

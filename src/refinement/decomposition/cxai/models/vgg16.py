@@ -5,8 +5,8 @@ import torch
 import torchvision
 
 from torchvision import transforms as T
-from cxai import constants
-from cxai.explainers.base import Explainer
+from refinement.decomposition.cxai import constants
+from refinement.decomposition.cxai.explainers.base import Explainer
 
 from . import ATTRIBUTE_TRANSFORMATION
 

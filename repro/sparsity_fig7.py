@@ -2,7 +2,7 @@
 each CH feature, for 100 test images of class 8, at the inputs of the refined layers."""
 import os, sys
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-sys.path[:0] = [os.path.join(ROOT, "src"), ROOT, os.path.join(ROOT, "src", "CH_datasets")]
+sys.path.insert(0, os.path.join(ROOT, "src"))
 import torch, torchvision
 from models.model_loading import load_model
 from CH_datasets.scenario_examples import MNIST_RGB_POISONERS

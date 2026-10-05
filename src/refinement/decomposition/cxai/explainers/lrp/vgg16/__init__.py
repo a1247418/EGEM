@@ -7,9 +7,9 @@ import numpy as np
 import torch
 import torchvision
 
-from cxai import models
+from refinement.decomposition.cxai import models
 
-from cxai.inspector import Inspector, InspectionRelevanceInfo
+from refinement.decomposition.cxai.inspector import Inspector, InspectionRelevanceInfo
 
 from ..base import LRPExplainerWithInspector
 from ..layer_inspection_context import LayerInspectionContext
