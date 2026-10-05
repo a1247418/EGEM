@@ -50,18 +50,20 @@ axs[0].legend(frameon=False, loc="upper center", bbox_to_anchor=(0.5, -0.1), nco
 fig.tight_layout(); fig.savefig(f"{OUT}/fig3_mnist_isic.png", dpi=150)
 
 # Fig. 6: CH feature variants
-fig, axs = plt.subplots(1, 4, figsize=(12, 3.2), sharey=True)
+fig, axs = plt.subplots(2, 2, figsize=(11, 6.4), sharey=True)
+axs = axs.ravel()
 for ax, v in zip(axs, ["artifact", "blur", "color", "remove"]):
     s = summary(f"mnist-rgb-{v}", 50)
     if s is not None:
         bars(ax, s, f"MNIST-{v} (50/class)")
-axs[0].set_ylabel("Test accuracy"); axs[-1].legend(frameon=False, loc="lower right")
+axs[0].set_ylabel("Test accuracy"); axs[2].set_ylabel("Test accuracy")
+axs[-1].legend(frameon=False, loc="lower right")
 fig.tight_layout(); fig.savefig(f"{OUT}/fig6_mnist_variants.png", dpi=150)
 
 # Supp. H: accuracy vs. number of refinement samples
 ns = [5, 10, 50, 200, 700]
-fig, axs = plt.subplots(1, 2, figsize=(9, 3.2), sharey=True)
-colors = {"ridge": "#1baf7a", "egem": CLEAN, "pcaegem": POIS}
+fig, axs = plt.subplots(1, 2, figsize=(10.5, 3.2), sharey=True)
+colors = {"egem": CLEAN, "pcaegem": POIS, "ridge": "#1baf7a", "rgem": "#eda100", "retrain": "#e87ba4"}  # palette slots 1-5
 for ax, p, title in [(axs[0], "none", "clean test data"), (axs[1], "uniform", "100%-poisoned test data")]:
     for m, c in colors.items():
         pts = [(n, s.loc[(m, p)]) for n in ns if (s := summary("mnist-8", n)) is not None and (m, p) in s.index]
@@ -74,6 +76,6 @@ for ax, p, title in [(axs[0], "none", "clean test data"), (axs[1], "uniform", "1
     ax.set_xscale("log"); ax.set_xticks(ns, [str(n) for n in ns]); ax.set_xlabel("refinement samples per class")
     ax.set_title(f"MNIST-8, {title}", color=INK, fontsize=10)
     ax.yaxis.grid(True, color="#e4e3df", linewidth=0.6)
-axs[0].set_ylabel("Test accuracy (5% slack)"); axs[1].legend(frameon=False, loc="lower right")
+axs[0].set_ylabel("Test accuracy (5% slack)"); axs[1].legend(frameon=False, loc="center left", bbox_to_anchor=(1.02, 0.5))
 fig.tight_layout(); fig.savefig(f"{OUT}/figH_samples.png", dpi=150)
 print("wrote", os.listdir(OUT))

@@ -104,30 +104,37 @@ Retrain is running at the paper's lr of 1e-7; a smoke test showed it does not ch
 
 ### Sample-size sweep (Supp. H), MNIST-8 — `figures/figH_samples.png`
 
-| samples/class | EGEM clean / pois. | PCA-EGEM clean / pois. | Ridge clean / pois. |
-|---|---|---|---|
-| 5 | 0.967 / 0.968 | 0.813 / 0.812 | 0.780 / 0.748 |
-| 10 | 0.958 / 0.956 | 0.917 / 0.915 | 0.862 / 0.839 |
-| 50 | 0.956 / 0.951 | 0.958 / 0.955 | 0.946 / 0.824 |
-| 200 | 0.966 / 0.964 | 0.974 / 0.968 | 0.953 / 0.871 |
-| 700 | 0.971 / 0.969 | 0.975 / 0.969 | 0.951 / 0.885 |
+| samples/class | EGEM | PCA-EGEM | Ridge | RGEM | Retrain |
+|---|---|---|---|---|---|
+| 5 | 0.967 / 0.968 | 0.813 / 0.812 | 0.780 / 0.748 | 0.900 / 0.828 | 0.853 / 0.706 |
+| 10 | 0.958 / 0.956 | 0.917 / 0.915 | 0.862 / 0.839 | 0.955 / 0.873 | 0.880 / 0.767 |
+| 50 | 0.956 / 0.951 | 0.958 / 0.955 | 0.946 / 0.824 | 0.943 / 0.886 | 0.923 / 0.870 |
+| 200 | 0.966 / 0.964 | 0.974 / 0.968 | 0.953 / 0.871 | 0.944 / 0.884 | 0.957 / 0.956 |
+| 700 | 0.971 / 0.969 | 0.975 / 0.969 | 0.951 / 0.885 | 0.945 / 0.884 | 0.975 / 0.976 |
 
-EGEM is robust down to 5 samples per class. PCA-EGEM needs ≥ 50 per class. With fewer samples the PCA basis
+Values are clean / poisoned test accuracy at 5% slack.
+EGEM is robust down to 5 samples per class. PCA-EGEM needs ≥ 50 per class and Retrain ≥ 200.
+Ridge and RGEM stay below 0.89 on poisoned data at every size. With fewer samples the PCA basis
 has rank < layer width, and every direction outside it is pruned to zero, which also costs clean accuracy.
 
 ### MNIST CH-feature variants (paper Fig. 6), 50 samples/class — `figures/fig6_mnist_variants.png`
 
-| Feature | Original clean / pois. | EGEM clean / pois. | PCA-EGEM clean / pois. | paper Original pois. (read from Fig. 6) |
+Poisoned accuracy, this run (paper read from Fig. 6). Clean accuracies are in `results/all_runs.csv`.
+
+| Method | artifact | blur | color | remove |
 |---|---|---|---|---|
-| artifact | 0.990 / 0.513 | 0.970 / 0.966 | 0.966 / 0.967 | ~0.69 |
-| blur | 0.982 / 0.949 | 0.956 / 0.911 | 0.968 / 0.950 | ~0.91 |
-| color | 0.961 / 0.903 | 0.925 / 0.827 | 0.928 / 0.879 | ~0.91 |
-| remove | 0.988 / 0.852 | 0.956 / 0.802 | 0.978 / 0.955 | ~0.77 |
+| Original | 0.513 (0.69) | 0.949 (0.91) | 0.903 (0.91) | 0.852 (0.77) |
+| Retrain | 0.634 (0.76) | 0.967 (0.97) | 0.979 (0.96) | 0.841 (0.79) |
+| Ridge | 0.908 (0.94) | 0.910 (0.95) | 0.957 (0.92) | 0.909 (0.92) |
+| RGEM | 0.802 (0.91) | 0.889 (0.92) | 0.876 (0.875) | 0.923 (0.93) |
+| EGEM | 0.966 (0.97) | 0.911 (0.78) | 0.827 (0.79) | 0.802 (0.73) |
+| PCA-EGEM | 0.967 (0.98) | 0.950 (0.96) | 0.879 (0.96) | 0.955 (0.93) |
 
 The paper's qualitative claims hold. EGEM removes the localized additive artifact but *lowers*
 poisoned accuracy for non-additive features (blur, color, remove). PCA-EGEM is at least as good as EGEM
 everywhere, and it fixes `remove` (0.852 → 0.955). On blur and color it does not beat the
-unrefined model, unlike the paper. Caveats:
+unrefined model, unlike the paper. The baselines follow the paper's pattern too: Retrain fails on the
+localized features (artifact, remove), and Ridge/RGEM are mediocre everywhere. Caveats:
 - The paper (5 % slack, 50/class) used 10 reps. This run used 5.
 - **The poisoners are reconstructions.** The weights `mnist-rgb-*.model` come from git history (`e9b127c`),
   but the code that made the poisoned data was never committed. `probe_mnist_rgb.py` identifies the
@@ -156,5 +163,4 @@ point in the network reproduces the paper's artifact value of 0.62 at Linear_2.
    position in the full list. Pretrained torchvision weights are fine. GPU shard jobs as for ISIC.
 2. ISIC: investigate why EGEM does not help (layer choice/scaling rule, refinement data overlapping the
    training data); Retrain results are pending.
-3. Run Retrain and RGEM on the sample-size sweep (Supp. H.15) and the MNIST variants (Fig. 6).
-4. Work through `TODO_cleanup.md`. The test-leaking selection in `run.py` and the lazy `cxai` import come first.
+3. Work through `TODO_cleanup.md`. The test-leaking selection in `run.py` and the lazy `cxai` import come first.
