@@ -279,24 +279,27 @@ class EGEMRefiner(StaticRefiner):
         do_pca: bool = False,
         pca_dims: Optional[int] = None,
         scaling_rule: str = "triangular",
+        spatial_sum: bool = False,
         **kwargs,
     ):
         super().__init__(
             model, layer_names, device=device, iterative=iterative, **kwargs
         )
         self.alpha = alpha
+        self.spatial_sum = spatial_sum
         self.do_pca = do_pca
         self.pca_dims = pca_dims
         self.scaling_rule = scaling_rule
         assert self.do_pca or self.pca_dims is None
         assert self.scaling_rule in ["triangular", "flat", "inverse-triangular"]
+        assert not (self.spatial_sum and self.do_pca), "spatial_sum is only defined for EGEM without PCA"
 
     # Activations and PCA do not depend on alpha, so the hyperparameter search would otherwise redo the
     # (expensive) PCA fit for every alpha. Holds strong references so object identity stays valid.
     _cache = None
 
     def _extract_values(self, layer_names: List[str], loader: DataLoader) -> Dict:
-        key = (self.model, loader, tuple(layer_names), self.do_pca, self.pca_dims)
+        key = (self.model, loader, tuple(layer_names), self.do_pca, self.pca_dims, self.spatial_sum)
         cache = EGEMRefiner._cache
         if not self.iterative and cache is not None and all(a is b or a == b for a, b in zip(cache[0], key)):
             return cache[1]
@@ -314,6 +317,7 @@ class EGEMRefiner(StaticRefiner):
             capture_outputs=False,
             device=self.device,
             silent=True,
+            spatial_sum=self.spatial_sum,
         )
         print("a_squared:", [a.shape for a in a_squared])
         values = {"a_squared": a_squared, "pca_X": pca_X, "pca_V": pca_V}
@@ -392,7 +396,7 @@ class EGEMRefiner(StaticRefiner):
                 replace_layer(self.model, layer_name, mod_layer)
 
     def get_filename(self) -> str:
-        return f"egem_it{self.iterative}_a{self.alpha}_{self.scaling_rule}_pca{self.pca_dims}.pkl"
+        return f"egem_it{self.iterative}_a{self.alpha}_{self.scaling_rule}_pca{self.pca_dims}_sum{self.spatial_sum}.pkl"
 
 
 class PCATruncRefiner(StaticRefiner):

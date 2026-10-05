@@ -16,19 +16,22 @@ p.add_argument("--data_root", default=os.path.expanduser("~/EGEM_work/data"))
 p.add_argument("--out", default="repro/results")
 p.add_argument("--explanation_type", default=None)
 p.add_argument("--threads", type=int, default=4)
+p.add_argument("--refiner_kwargs", default=None, help='JSON, e.g. \'{"spatial_sum": true}\'')
+p.add_argument("--tag", default=None, help="variant name; results are saved as <refinement>+<tag>")
 p.add_argument("--num_workers", type=int, default=8, help="data loader workers")
 a = p.parse_args()
 torch.set_num_threads(a.threads)
 os.makedirs(a.out, exist_ok=True)
 t = time.time()
 res = run_experiment(scenario_name=a.scenario, data_root=a.data_root, refinement=a.refinement,
-                     n_reps=a.n_reps, n_samples=a.n_samples, poisoning_strategy=a.poisoning, num_workers=a.num_workers,
+                     n_reps=a.n_reps, n_samples=a.n_samples, poisoning_strategy=a.poisoning, num_workers=a.num_workers, refiner_kwargs=a.refiner_kwargs,
                      **({"explanation_type": a.explanation_type} if a.explanation_type else {}))
 for sel in select_by_slack(res, a.refinement, 0.05):
     print(f"Selected (5% slack): rep {sel['rep']}, test top-1 {float(sel['top1'][0]):.4f}")
 for r in res:
     for k in ("output", "true", "predicted"):
         r.pop(k, None)
-fn = os.path.join(a.out, f"{a.scenario}_{a.refinement}_{a.poisoning}_n{a.n_samples}_r{a.n_reps}.pkl")
+method = a.refinement + (f"+{a.tag}" if a.tag else "")
+fn = os.path.join(a.out, f"{a.scenario}_{method}_{a.poisoning}_n{a.n_samples}_r{a.n_reps}.pkl")
 pkl.dump(res, open(fn, "wb"))
 print("saved", fn, "took %.1f min" % ((time.time() - t) / 60))

@@ -20,7 +20,7 @@ def load(results_dir, n, reps, scenario="mnist-8"):
             rows.append(dict(method=ref, poisoning=pois, rep=r["rep"], top1=float(np.mean(r["top1"])),
                              top1_val=float(np.mean(r["top1_val"])),
                              orig_top1_val=float(np.mean(r.get("orig_top1_val", np.nan))),
-                             hp=r.get(HP.get(ref, (None,))[0], np.nan)))
+                             hp=r.get(HP.get(ref.split("+")[0], (None,))[0], np.nan)))
     return pd.DataFrame(rows)
 
 
@@ -33,7 +33,7 @@ def select(df, slack):
         ok = g[g.top1_val >= g.orig_top1_val - slack]
         if len(ok) == 0:  # nothing within slack: fall back to the best validation accuracy
             ok = g[g.top1_val == g.top1_val.max()]
-        smaller_is_stronger = HP[m][1]
+        smaller_is_stronger = HP[m.split("+")[0]][1]  # "+<tag>" marks a variant of a method
         row = ok.sort_values("hp", ascending=smaller_is_stronger).iloc[0]
         out.append(dict(method=m, poisoning=p, rep=rep, top1=row.top1, hp=row.hp))
     return pd.DataFrame(out)

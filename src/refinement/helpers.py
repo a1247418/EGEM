@@ -59,6 +59,7 @@ def get_activations(
     capture_outputs: bool = False,
     avg_on_the_fly = False,
     reduce_spatial=True,
+    spatial_sum: bool = False,
     device: str = "cuda",
     silent: bool = True,
 ):
@@ -76,6 +77,8 @@ def get_activations(
     :param batch_dim: The batch-dimension in the input. [0,1], [batch, n_tokens, dimension] if batch_dim == 0 else [n_tokens, batch, dimension]
     :param capture_outputs: Whether to capture the outputs of the layers or the inputs.
     :param reduce_spatial: Whether to reduce the spatial dimensions of the activations. [True, False]
+    :param spatial_sum: For conv layers, sum each channel over the spatial dimensions (one value per sample,
+        as described in Sec. 3.1 of the paper) instead of treating every position as a sample.
     :param device: The device to use. ["cuda", "cpu"]
     """
     # TODO: different batch_dims/layer
@@ -123,7 +126,9 @@ def get_activations(
         else:
             # Conv layer
             # TODO, make adapt with batch dim, and set default to 0
-            if spatial_keep is not None:
+            if spatial_sum:
+                captured_activations.append(activations[0].sum(dim=[-2, -1]).clone())
+            elif spatial_keep is not None:
                 # Subsample spatial positions per batch, as captured_to_list would do afterwards anyway;
                 # keeping full maps of all samples does not fit in GPU memory for VGG-16 at 224px.
                 rows = activations[0].permute(0, 2, 3, 1).reshape(-1, activations[0].shape[1])
