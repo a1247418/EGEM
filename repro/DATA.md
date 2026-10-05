@@ -87,10 +87,15 @@ Ways to get only these classes (all need an ImageNet account that has accepted t
 The validation set (`ILSVRC2012_img_val.tar`, 6.3 GB) is a flat folder. torchvision sorts it into wnid
 folders using the devkit when given the tar; afterwards only the six folders need to be kept.
 
-## CelebA (Sec. 6, not attempted)
+## CelebA (Sec. 6)
 
-`torchvision.datasets.CelebA(root, download=True)` (about 1.4 GB, from Google Drive, often rate-limited).
-The model `celeba_vgg16.model` exists only in git history: `git show e9b127c:model_weights/celeba_vgg16.model`.
+```bash
+pip install gdown
+python -c "import torchvision; torchvision.datasets.CelebA('$HOME/EGEM_work/data/celeba_root', split='test', download=True)"
+```
+This downloads about 1.4 GB from Google Drive (it worked on 2026-10-05; Drive quotas sometimes block it) and
+unpacks it to `celeba_root/celeba/img_align_celeba/` (202,599 images, 1.7 GB). The model is
+`model_weights/celeba_vgg16.model`, restored on this branch from commit `e9b127c`.
 
 ## Model weights overview
 
@@ -100,4 +105,4 @@ The model `celeba_vgg16.model` exists only in git history: `git show e9b127c:mod
 | `model_weights/mnist-rgb-{artifact,blur,color,remove}.model` | restored on this branch from commit `e9b127c` |
 | `model_weights/isic_vgg16.model` | trained with `repro/train_isic.py` (never released) |
 | torchvision `resnet50` / `vgg16` | downloaded automatically |
-| `celeba_vgg16.model` | `git show e9b127c:model_weights/celeba_vgg16.model` |
+| `model_weights/celeba_vgg16.model` | restored on this branch from commit `e9b127c` |

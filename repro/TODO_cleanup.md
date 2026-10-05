@@ -68,8 +68,8 @@ Items marked **[fixed on branch]** have a minimal fix applied; the rest are open
 - **[fixed on branch]** No README (the root README was just `# EGEM`): it now has install, data, quick-start and layout sections.
 - **[partly fixed on branch]** No script produced the paper's figures/tables from results. `repro/make_figures.py`
   now makes Fig. 3 (MNIST, ISIC), Fig. 6 and Supp. H, and `repro/sparsity_fig7.py` makes Fig. 7. Fig. 4 and G/I are still missing.
-- **[mostly fixed on branch]** Model weights: only `mnist.model` was at HEAD. `mnist-rgb-*.model` are restored
-  from git history (`e9b127c`) and ISIC can be retrained; `celeba_vgg16.model` is still only in history.
+- **[fixed on branch]** Model weights: only `mnist.model` was at HEAD. `mnist-rgb-*.model` are restored
+  from git history (`e9b127c`) together with `celeba_vgg16.model`, and ISIC can be retrained.
   ImageNet experiments use torchvision pretrained weights (fine).
 - Datasets: no download helper. **[fixed on branch]** The MNIST loader in CH_datasets now has `download=True`;
   the other datasets are **[documented on branch]**:

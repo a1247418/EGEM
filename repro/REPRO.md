@@ -15,7 +15,7 @@ and model weight is in [`DATA.md`](DATA.md).
 | Sparsity, Fig. 7 | Partly: the Linear_1 column matches; MaxPool2d / Linear_2 do not |
 | ISIC, Fig. 3 | **Partly reproduced**: retrained model matches the original's accuracy; PCA-EGEM helps (+4 vs ≈+12 points), EGEM does not |
 | ImageNet carton/mtb, Fig. 3 | Blocked: needs ImageNet train+val for 6 classes (no copy available; see `DATA.md`) |
-| CelebA, Sec. 6 | Not attempted (qualitative; `celeba_vgg16.model` is in git history) |
+| CelebA, Sec. 6 (Fig. 9) | **Not reproduced**: PCA-EGEM lowers blond recall slightly in almost every subgroup instead of rebalancing it |
 
 ## How to run
 
@@ -161,6 +161,33 @@ localized features (artifact, remove), and Ridge/RGEM are mediocre everywhere. C
   models roughly match Fig. 6: blur k=5/σ=1, red channel ×0.85, lower 28% removed. The artifact is
   the exact mnist-8 definition, yet it hurts this model more than the paper reports (0.51 vs ~0.69).
   So the RGB artifact model was probably trained or evaluated with a different artifact.
+
+### CelebA, blond-hair recall per subgroup (paper Sec. 6, Fig. 9) — `celeba_sec6.py`, `figures/fig9_celeba_recall.png`
+
+Setup as in the paper:
+- Model `vgg16_celeba`, restored from git history.
+- 200 "user-verified" validation images per class: correctly predicted, with ≥ 75% of |LRP| inside a
+  hair mask. The mask is read off Fig. F.12, so it is approximate.
+- PCA-EGEM on the activations after the VGG blocks and after the ReLUs.
+- Recall of Blond_Hair on up to 5,000 test images per attribute.
+- One GPU-shard job, 3 min.
+
+| | test accuracy | blond recall (all) | Male | Wearing_Necktie | Sideburns |
+|---|---|---|---|---|---|
+| Original (paper) | 0.93 | ≈0.95 | ≈0.65 | ≈0.47 | ≈0.63 |
+| Original (here) | 0.917 | 0.955 | 0.719 | 0.350 | 0.615 |
+| PCA-EGEM, paper | – | ≈0.95 | ≈0.75 | ≈0.71 | ≈0.72 |
+| PCA-EGEM, α = 0.01 (paper's value) | 0.947 | 0.854 | 0.500 | 0.200 | 0.385 |
+| PCA-EGEM, α = 0.1 (5% slack here) | 0.933 | 0.922 | 0.632 | 0.300 | 0.538 |
+
+The paper's α = 0.01 is what 5% slack gave *for its model*. Applying the slack rule here (80/20 split of
+the verified images) selects α = 0.1. With either α, recall drops slightly in almost every subgroup; there is
+no rebalancing toward the low-recall groups. Test accuracy rises because the refined model predicts
+"blond" less often. Caveats:
+- The low-recall subgroups have very few blond test images (Wearing_Necktie 20, Sideburns 13, Goatee 1).
+  The paper's Goatee recall of ≈0.66 is impossible with a single blond Goatee image in the test split, so
+  the paper probably sampled subgroups from a larger pool.
+- The hair mask and the LRP rule (`epsilon_alpha2_beta1_flat`, the repo default) are best guesses.
 
 ### Sparsity of the CH-induced representation change (paper Fig. 7) — `sparsity_fig7.py`
 

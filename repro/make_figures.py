@@ -102,3 +102,20 @@ for ax in axs[1]:
 axs[0, 1].legend(frameon=False, loc="center left", bbox_to_anchor=(1.02, 0.5))
 fig.tight_layout(); fig.savefig(f"{OUT}/fig4_slack.png", dpi=150)
 print("wrote fig4_slack.png")
+
+# Fig. 9: CelebA blond-hair recall per attribute subgroup, before/after PCA-EGEM (repro/celeba_sec6.py)
+f9 = os.path.join(RES, "celeba_recall.csv")
+if os.path.exists(f9):
+    import pandas as pd
+    d = pd.read_csv(f9).sort_values("recall_orig")
+    x = np.arange(len(d))
+    fig, ax = plt.subplots(figsize=(13.5, 3.8))
+    ax.bar(x - 0.2, d.recall_orig, 0.4, color=CLEAN, label="Original", edgecolor=SURF, linewidth=1)
+    ax.bar(x + 0.2, d.recall_refined, 0.4, color=POIS, label="PCA-EGEM (slack-selected α)", edgecolor=SURF, linewidth=1)
+    ax.set_xticks(x, [f"{a} ({n})" for a, n in zip(d.attribute, d.n_blond)], rotation=90, fontsize=7)
+    ax.set_ylabel("Recall of Blond_Hair"); ax.set_ylim(0, 1.02)
+    ax.yaxis.grid(True, color="#e4e3df", linewidth=0.6); ax.set_axisbelow(True)
+    ax.set_title("CelebA: recall per attribute subgroup (number of blond test images in parentheses)", color=INK, fontsize=10)
+    ax.legend(frameon=False, loc="center left", bbox_to_anchor=(1.01, 0.5))
+    fig.tight_layout(); fig.savefig(f"{OUT}/fig9_celeba_recall.png", dpi=150)
+    print("wrote fig9_celeba_recall.png")
