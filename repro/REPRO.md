@@ -100,6 +100,11 @@ Likely causes:
 - With the triangular rule, the first refined layers are pruned least, while the paper's Supp. J finds
   the ISIC CH feature most separable at early layers.
 
+Hypotheses tested so far (exploratory, not in the paper's protocol):
+- *Spatial summing* (`--refiner_kwargs '{"spatial_sum": true}'`, as worded in the paper's Sec. 3.1, instead
+  of the code's per-position statistics): no effect. Poisoned accuracy stays within ±0.01 of EGEM for every α.
+- *Scaling rule* (`flat`, `inverse-triangular` instead of `triangular`): see below once the runs finish.
+
 Retrain is running at the paper's lr of 1e-7; a smoke test showed it does not change the model.
 
 ### Slack (paper Fig. 4 / Supp. G) — `figures/fig4_slack.png`
@@ -164,7 +169,9 @@ localized features (artifact, remove), and Ridge/RGEM are mediocre everywhere. C
 
 The Linear_1 column matches (the artifact is the sparsest). The other columns depend on where the paper
 tapped the activations. Here they are the inputs of the refined layers `features.3/7/9`, and no tap
-point in the network reproduces the paper's artifact value of 0.62 at Linear_2.
+point in the network reproduces the paper's artifact value of 0.62 at Linear_2. Other ways to compute the
+metric don't reproduce it either: the ratio of the image-averaged change, of the averaged absolute change,
+or of channel-summed conv maps (`scratch` experiment, 0.09–0.10 at Linear_2 for the artifact).
 
 ## Next steps
 1. ImageNet tasks (carton/crate/envelope/packet, mtb/bbt): they need the 6 classes plus validation (see
