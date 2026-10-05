@@ -52,8 +52,8 @@ def parseargs():
         "--poisoning_strategy",
         type=str,
         default="none",
-        help="none, uniform, targeted, or adversarial",
-        choices=["none", "uniform", "targeted", "adversarial"],
+        help="none, uniform, target, or adversarial",
+        choices=["none", "uniform", "target", "adversarial"],
     )
     aa("--model", type=str, default=None)
     aa("--explanation_type", type=str, default="epsilon_alpha2_beta1_flat")
@@ -301,7 +301,7 @@ def run_experiment(
                 print(f"Plotting {exp['explanation_type']} explanation for a few examples")
                 for i in range(3):
                     with explainer.attributor:
-                        out, r = explainer.attributor(tensor_x[i:(i+1)], torch.eye(n_classes, device="cuda",
+                        out, r = explainer.attributor(tensor_x[i:(i+1)], torch.eye(n_classes, device=device,
                                                                         dtype=torch.int)[[tensor_y[i:(i+1)]]])
                     fig, axs = plt.subplots(1, 2)
                     axs[0].imshow(torch.permute(tensor_x[i], (1, 2, 0)).cpu().numpy())
@@ -465,7 +465,7 @@ if __name__ == "__main__":
             layer_names=args.layer_names,
             refiner_kwargs=args.refiner_kwargs,
             explanation_type=args.explanation_type,
-            decomposition_type=args.explanation_type
+            decomposition_type=args.decomposition_type
     )
 
     for sel in select_by_slack(results, args.refinement, args.slack):
