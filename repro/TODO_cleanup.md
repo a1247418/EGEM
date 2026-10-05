@@ -73,7 +73,8 @@ Items marked **[fixed on branch]** have a minimal fix applied; the rest are open
   the other datasets are **[documented on branch]**:
   `repro/DATA.md` gives the download commands and the expected layout.
   ImageNet needs a local copy (6 classes only); ISIC 2019 must be downloaded manually.
-- No fixed seeds for PCA (`torch.pca_lowrank` is randomized) -> reps are not bit-reproducible.
+- ~~No fixed seeds for PCA~~ (wrong earlier claim): the PCA is a deterministic full SVD (sklearn), and
+  `run_experiment` seeds torch and numpy, so a run is repeatable on the same hardware.
 
 ## Dependencies / packaging
 - **[fixed on branch]** `src/requirements.txt` missed imported packages: scikit-learn and

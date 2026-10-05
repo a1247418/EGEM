@@ -163,4 +163,4 @@ point in the network reproduces the paper's artifact value of 0.62 at Linear_2.
    position in the full list. Pretrained torchvision weights are fine. GPU shard jobs as for ISIC.
 2. ISIC: investigate why EGEM does not help (layer choice/scaling rule, refinement data overlapping the
    training data); Retrain results are pending.
-3. Work through `TODO_cleanup.md`. The test-leaking selection in `run.py` and the lazy `cxai` import come first.
+3. Work through the open items in `TODO_cleanup.md`.
