@@ -8,7 +8,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from analyze import load, select
 
 RES, OUT, SLACK = "repro/results", "repro/figures", 0.05
-METHODS = {"none": "Original", "ridge": "Ridge", "egem": "EGEM", "pcaegem": "PCA-EGEM"}
+METHODS = {"none": "Original", "retrain": "Retrain", "ridge": "Ridge", "rgem": "RGEM", "egem": "EGEM",
+           "pcaegem": "PCA-EGEM"}
 CLEAN, POIS = "#2a78d6", "#eb6834"  # categorical slots 1-2 of the reference palette
 INK, MUTED, SURF = "#0b0b0b", "#52514e", "#fcfcfb"
 plt.rcParams.update({"font.size": 9, "axes.edgecolor": MUTED, "axes.labelcolor": INK, "xtick.color": MUTED,
@@ -39,9 +40,9 @@ def bars(ax, s, title):
 
 
 # Fig. 3 (MNIST part)
-fig, ax = plt.subplots(figsize=(5, 3.2))
+fig, ax = plt.subplots(figsize=(6.5, 3.5))
 bars(ax, summary("mnist-8", 700), "MNIST-8, 700 samples/class, 5% slack")
-ax.set_ylabel("Test accuracy"); ax.legend(frameon=False, loc="lower right")
+ax.set_ylabel("Test accuracy"); ax.legend(frameon=False, loc="upper center", bbox_to_anchor=(0.5, -0.1), ncol=2)
 fig.tight_layout(); fig.savefig(f"{OUT}/fig3_mnist.png", dpi=150)
 
 # Fig. 6: CH feature variants

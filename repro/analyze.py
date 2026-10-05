@@ -9,7 +9,8 @@ import numpy as np
 import pandas as pd
 
 # Hyperparameter name and whether a *smaller* value means *stronger* refinement
-HP = {"egem": ("alpha", True), "pcaegem": ("alpha", True), "ridge": ("lmbda", False)}
+HP = {"egem": ("alpha", True), "pcaegem": ("alpha", True), "ridge": ("lmbda", False), "rgem": ("lmbda", False),
+      "retrain": ("n_epochs", False)}
 
 
 def load(results_dir, n, reps, scenario="mnist-8"):

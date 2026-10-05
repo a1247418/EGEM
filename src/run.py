@@ -17,6 +17,8 @@ from refinement.refiner import (
     PCATruncRefiner,
     WEGEMRefiner,
     RegressionRefiner,
+    RGEMRefiner,
+    RetrainRefiner,
     PEGEMRefiner
 )
 from refinement.helpers import (get_activations, calculate_sensitivity)
@@ -37,7 +39,7 @@ def parseargs():
         "--refinement",
         type=str,
         default="none",
-        choices=["none", "egem", "pcaegem", "ridge", "pcatrunc", "wegem", "pegem", "pep"],
+        choices=["none", "egem", "pcaegem", "ridge", "rgem", "retrain", "pcatrunc", "wegem", "pegem", "pep"],
     )
     aa("--scenario_name", type=str)
     aa("--data_root", type=str)
@@ -77,6 +79,10 @@ def get_refiner_class(refinement_name: str):
         return WEGEMRefiner
     elif refinement_name == "ridge":
         return RegressionRefiner
+    elif refinement_name == "rgem":
+        return RGEMRefiner
+    elif refinement_name == "retrain":
+        return RetrainRefiner
     elif refinement_name == "none":
         return None
     else:
@@ -325,6 +331,10 @@ def run_experiment(
         if exp["refinement"] in ["pep","pegem"] and "mnist" not in scenario_name and "collapse_start" not in refiner_kwargs:
             print("Setting start layer to collapse spatial dimensions by default.")
             refiner_kwargs.update({"collapse_start":1})
+        if exp["refinement"] == "retrain" and "lr" not in refiner_kwargs:
+            # Paper Supp. F.3 learning rates
+            refiner_kwargs["lr"] = {"mnistnet": 1e-3, "mnistnetRGB": 1e-3, "resnet50": 5e-6, "vgg16": 5e-5,
+                                    "vgg16_isic": 1e-7}.get(exp["model_name"], 1e-3)
 
         # Create decomposers - depends on refinement params
         if exp["decomposition_type"] != "none":

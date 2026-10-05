@@ -34,9 +34,12 @@ Items marked **[fixed on branch]** have a minimal fix applied; the rest are open
   oversampling. Code: `evaluation.get_n_shot_data` takes any samples (no correctness filter).
 - Paper (Supp. F.3) alpha grid {1e-5, 1e-4, 1e-3, 0.01, 0.1, ..., 0.9, 1};
   `experiment_config.get_refinement_hyperparams` uses {0.001, 0.01, 0.1, ..., 0.9, 0.99}.
-- Paper Ridge/RGEM lambda grid {1e-4 ... 1e4}; code uses a different grid.
-- Paper's "Retrain" and "RGEM" baselines are not exposed in `run.py`
-  (`retrain` has hyperparams but no refiner class; RGEM vs Ridge distinction unclear).
+- **[fixed on branch]** Paper Ridge/RGEM lambda grid {1e-4 ... 1e4}; code used {1e-3 ... 1e6}. The grid is now the
+  paper's, and `RegressionRefiner` normalizes the normal equations by n (lambda relative to E[aa^T], Eq. D.1)
+  and solves them in float64. This changes the Ridge numbers.
+- **[fixed on branch]** Paper's "Retrain" and "RGEM" baselines were not exposed in `run.py`. Added `RetrainRefiner`
+  (Adam, paper learning rates, Ne in {1, 5, 10, 20, 30, 50, 100}, BN frozen, grad-norm clip 1e-3) and `RGEMRefiner`
+  (ridge on the original logits). Open: F.3 does not say whether the gradient clipping at 1e-3 is norm or value clipping.
 - Paper MNIST available data = 700 samples total (Table 1); CH_datasets ships
   `mnist_refinement_idcs.npy` with 39,942 indices.
 - Paper says the ISIC model is VGG-16 fine-tuned with 2 output nodes; config uses 8 classes
@@ -48,8 +51,9 @@ Items marked **[fixed on branch]** have a minimal fix applied; the rest are open
   (conv 3/5, FC 200). The released `mnist.model` matches the code, so the table is probably wrong.
 - The 1000-sample MNIST test subset is drawn once per process, so all reps share the same test
   set (std over reps of the unrefined model is exactly 0); the paper draws 1000 per run.
-- Paper Fig. 3: Ridge stays within 4% on poisoned MNIST; here Ridge (one-hot targets, code grid)
-  reaches only 0.89 poisoned at 5% slack. Check whether the paper's Ridge/RGEM differ from `RegressionRefiner`.
+- Paper Fig. 3: Ridge and RGEM stay within 4% on poisoned MNIST; here both reach only ~0.88 poisoned at 5% slack
+  (paper grid, normalized lambda). No lambda in the grid gets there. Possible causes: the paper's MNIST net (Table E.2: FC 200)
+  or the correctly-predicted-only refinement data.
 
 ## Missing pieces for reproduction
 - No README (root README is just `# EGEM`): no install, data, or run instructions.

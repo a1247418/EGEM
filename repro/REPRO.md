@@ -8,7 +8,7 @@ Cleanup items found along the way are listed in [`TODO_cleanup.md`](TODO_cleanup
 
 | Experiment (paper) | Status |
 |---|---|
-| MNIST-8, Fig. 3 | **Reproduced** (Original, Ridge, EGEM, PCA-EGEM; no Retrain/RGEM in code) |
+| MNIST-8, Fig. 3 | **Reproduced** for Original, Retrain, EGEM, PCA-EGEM; Ridge and RGEM fall short on poisoned data |
 | MNIST-8, sample-size sweep (Supp. H) | **Reproduced** for Ridge / EGEM / PCA-EGEM, 5–700 samples per class |
 | MNIST CH variants, Fig. 6 | **Partly reproduced**: weights restored from git history; the poisoners were never released, so they are reconstructed and calibrated (see below) |
 | Sparsity, Fig. 7 | Partly: the Linear_1 column matches; MaxPool2d / Linear_2 do not |
@@ -25,12 +25,12 @@ conda create -p ~/.conda/envs/egem python=3.10
     torchvision==0.17.2 zennit==0.5.0 scikit-learn scipy "timm<1" frozendict "nptyping<2" pytorch_lightning
 # MNIST is downloaded with torchvision to ~/EGEM_work/data
 cd EGEM   # repo root
-python repro/run_mnist.py --scenario mnist-8 --refinement {none,egem,pcaegem,ridge} \
+python repro/run_mnist.py --scenario mnist-8 --refinement {none,retrain,ridge,rgem,egem,pcaegem} \
        --poisoning {none,uniform} --n_samples 700 --n_reps 5
 python repro/analyze.py --scenario mnist-8 --n 700 --slack 0.01 0.05   # paper's selection rule
 python repro/make_figures.py
 ```
-Everything runs on CPU. One EGEM/Ridge run (5 reps × 12 hyperparameters) takes about 5 min. PCA-EGEM takes
+Everything runs on CPU. One EGEM/Ridge/RGEM run (5 reps × 9–12 hyperparameters) takes 1–5 min, Retrain about 13 min. PCA-EGEM takes
 3–10 min per rep, dominated by sklearn's full SVD.
 
 **Hyperparameter selection.** `run.py` keeps the hyperparameter with the best *test* accuracy. That
@@ -48,25 +48,37 @@ poisoning, "poisoned" = uniform 100% poisoning (the CH feature is added to every
 | Method | clean | poisoned | chosen hyperparameter |
 |---|---|---|---|
 | Original | 0.989 ± 0.000 | 0.691 ± 0.000 | – |
-| Ridge | 0.953 ± 0.002 | 0.891 ± 0.003 | λ = 1e5 |
+| Retrain | 0.975 ± 0.005 | 0.976 ± 0.004 | Ne = 100 |
+| Ridge | 0.951 ± 0.015 | 0.885 ± 0.012 | λ = 10 (4 reps), 100 (1 rep) |
+| RGEM | 0.945 ± 0.001 | 0.884 ± 0.001 | λ = 100 |
 | EGEM | 0.971 ± 0.001 | 0.969 ± 0.001 | α = 0.3 |
 | PCA-EGEM | 0.975 ± 0.001 | 0.969 ± 0.003 | α = 0.1 |
 
 Paper: the original model loses ~30 points under poisoning (reproduced: −30 points). EGEM and PCA-EGEM end
 within 4 points of the original clean accuracy with "virtually no gap" between clean and poisoned
 (reproduced: −1.4 to −2.0 points, gap ≤ 0.6 points). At 1% slack, EGEM gets 0.984 / 0.971 and PCA-EGEM 0.983 / 0.978.
-**Deviation:** the paper also has Ridge within 4 points. Here Ridge (one-hot targets, code's λ grid) reaches
-only 0.89 on poisoned data.
+Retrain (all layers, Adam, lr 1e-3) also matches the paper: 0.975 / 0.976, picking the largest Ne in the grid.
+**Deviation:** the paper also has Ridge and RGEM within 4 points. Here both reach only 0.88 on poisoned data
+(about 10 points below the original clean accuracy). No λ in the grid does better: Ridge peaks at 0.921 / 0.909
+(λ = 100) and RGEM at 0.945 / 0.884 (λ = 100). At 1% slack, Retrain gets 0.973 / 0.972, RGEM 0.983 / 0.853 (λ = 10),
+and Ridge 0.969 / 0.772 (no λ is within 1% on validation, so the fallback picks the best validation accuracy).
+
+Ridge and RGEM refit only the last layer in closed form on the penultimate activations, with the paper's grid
+λ ∈ {1e-4, ..., 1e4} (Supp. F.3). Ridge regresses one-hot labels, RGEM the original model's logits (Eq. D.3). The bias
+is not penalized, and the shrinkage is towards 0, not towards w_old. λ is relative to the *mean* covariance
+E[aaᵀ], as in Eq. D.1/D.2. The earlier code used the sum aᵀa, so its λ was n_train = 5600 times smaller. With the sum the
+paper's grid stops before the slack boundary (RGEM at λ = 1e4 was still at 0.987 / 0.766). The normal equations are
+solved in float64, because aᵀa is near-singular (dead ReLUs).
 
 ### Sample-size sweep (Supp. H), MNIST-8 — `figures/figH_samples.png`
 
 | samples/class | EGEM clean / pois. | PCA-EGEM clean / pois. | Ridge clean / pois. |
 |---|---|---|---|
-| 5 | 0.967 / 0.968 | 0.813 / 0.812 | 0.749 / 0.740 |
-| 10 | 0.958 / 0.956 | 0.917 / 0.915 | 0.838 / 0.779 |
-| 50 | 0.956 / 0.951 | 0.958 / 0.955 | 0.942 / 0.854 |
-| 200 | 0.966 / 0.964 | 0.974 / 0.968 | 0.946 / 0.872 |
-| 700 | 0.971 / 0.969 | 0.975 / 0.969 | 0.953 / 0.891 |
+| 5 | 0.967 / 0.968 | 0.813 / 0.812 | 0.780 / 0.748 |
+| 10 | 0.958 / 0.956 | 0.917 / 0.915 | 0.862 / 0.839 |
+| 50 | 0.956 / 0.951 | 0.958 / 0.955 | 0.946 / 0.824 |
+| 200 | 0.966 / 0.964 | 0.974 / 0.968 | 0.953 / 0.871 |
+| 700 | 0.971 / 0.969 | 0.975 / 0.969 | 0.951 / 0.885 |
 
 EGEM is robust down to 5 samples per class. PCA-EGEM needs ≥ 50 per class. With fewer samples the PCA basis
 has rank < layer width, and every direction outside it is pruned to zero, which also costs clean accuracy.
@@ -112,5 +124,5 @@ point in the network reproduces the paper's artifact value of 0.62 at Linear_2.
    12 α values × 5 reps): a single 40 GB A100 or a GPU shard, a few hours.
 2. ISIC: download ISIC 2019, retrain `vgg16_isic` (weights were never released), and redo the manual
    removal of patch images from the refinement data. Needs a GPU.
-3. Missing baselines: Retrain and RGEM (not exposed in `run.py`).
+3. Run Retrain and RGEM on the sample-size sweep (Supp. H.15) and the MNIST variants (Fig. 6).
 4. Work through `TODO_cleanup.md`. The test-leaking selection in `run.py` and the lazy `cxai` import come first.

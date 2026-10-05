@@ -584,6 +584,17 @@ class RegressionRefiner(StaticRefiner):
         ys = torch.cat(ys, dim=0)
         return {"a": xs, "y": ys}
 
+    def _targets(self, a: Tensor, y: Tensor) -> Tensor:
+        """Ridge regression targets: one-hot true labels."""
+        labels = torch.zeros(
+            len(y),
+            self.model.features[-1].out_features,
+            device=a.device,
+            dtype=torch.float32,
+        )
+        labels[np.arange(len(y)), y.long()] = 1
+        return labels
+
     def _train_refinement_unit(self, layer_names: List[str], a: Tensor, y: Tensor):
         l = self.model.features[-1]  # last linear
 
@@ -594,20 +605,17 @@ class RegressionRefiner(StaticRefiner):
         else:
             ab = a
 
-        S = torch.transpose(ab, 0, 1) @ ab
-        reg = self.lmbda * torch.eye(S.shape[-1], device=self.device)
+        # float64: S is near-singular (dead ReLUs), so float32 is inaccurate for small lambda
+        ab = ab.double()
+        # Normalize by n: the paper's objective (Supp. D, Eq. D.1) is E[(f(x,w)-t)^2] + lambda*||w||^2,
+        # so lambda is relative to the covariance E[aa^T], not the sum a^T a
+        S = torch.transpose(ab, 0, 1) @ ab / ab.shape[0]
+        reg = self.lmbda * torch.eye(S.shape[-1], device=self.device, dtype=S.dtype)
 
         if has_bias:
             reg[-1] = 0  # don't penalize bias
 
-        # Ridge regression, labels
-        labels = torch.zeros(
-            len(y),
-            self.model.features[-1].out_features,
-            device=a.device,
-            dtype=torch.float32,
-        )
-        labels[np.arange(len(y)), y] = 1
+        labels = self._targets(a, y)
         print(labels.shape, self.model.features[-1].weight.shape)
         # Invert the projection layer to get the labels in the original y-space
         # labels = labels @ self.model.features[-1].weight
@@ -625,7 +633,7 @@ class RegressionRefiner(StaticRefiner):
             "labels:",
             labels.shape,
         )
-        wb_reorient = torch.matmul(torch.matmul(torch.inverse(S + reg), ab.T), labels)
+        wb_reorient = torch.linalg.solve(S + reg, ab.T @ labels.double() / ab.shape[0]).float()
         wb_reorient = wb_reorient.T
         print("wb_reorient:", wb_reorient.shape, "l.weight:", l.weight.shape)
 
@@ -657,6 +665,84 @@ class RegressionRefiner(StaticRefiner):
 
     def get_filename(self) -> str:
         return f"ridge_e{self.lmbda}.pkl"
+
+
+class RGEMRefiner(RegressionRefiner):
+    """Response-guided exposure minimization (paper Supp. D, Eq. D.3): ridge regression of the last
+    layer on the original model's outputs f(X, w_old) instead of the true labels. The penalty
+    lambda*||w||^2 shrinks towards zero (not towards w_old); the bias is not penalized."""
+
+    def _targets(self, a: Tensor, y: Tensor) -> Tensor:
+        with torch.no_grad():
+            return self.model.features[-1](a).float()  # model is unrefined during training
+
+    def get_filename(self) -> str:
+        return f"rgem_e{self.lmbda}.pkl"
+
+
+class RetrainRefiner(BaseRefiner):
+    """Retrain baseline (paper Supp. F.3): fine-tune all layers on the refinement data with Adam and
+    cross-entropy, no extra regularization, batch-norm frozen, gradient norm clipped."""
+
+    def __init__(
+        self,
+        model: torch.nn.Module,
+        layer_names: Optional[List[str]] = None,
+        n_epochs: int = 10,
+        lr: float = 1e-3,
+        grad_clip: float = 1e-3,
+        device: str = "cuda",
+        **kwargs,
+    ):
+        super().__init__(model, layer_names, device=device, **kwargs)
+        self.n_epochs = n_epochs
+        self.lr = lr
+        self.grad_clip = grad_clip
+        self.original_state = {k: v.detach().clone() for k, v in model.state_dict().items()}
+
+    def train_refinement(
+        self, train_loader: DataLoader, val_loader: Optional[DataLoader] = None
+    ):
+        super().train_refinement(train_loader, val_loader)
+        bn_types = (torch.nn.BatchNorm1d, torch.nn.BatchNorm2d, torch.nn.BatchNorm3d)
+        bn_params = {id(p) for m in self.model.modules() if isinstance(m, bn_types) for p in m.parameters()}
+        params = [p for p in self.model.parameters() if id(p) not in bn_params]
+        req_grad = [p.requires_grad for p in self.model.parameters()]
+        for p in params:
+            p.requires_grad_(True)
+        was_training = self.model.training
+        self.model.train()
+        for m in self.model.modules():
+            if isinstance(m, bn_types):
+                m.eval()  # keep running statistics fixed
+        optimizer = torch.optim.Adam(params, lr=self.lr)
+        loader = DataLoader(train_loader.dataset, batch_size=train_loader.batch_size, shuffle=True)
+        for epoch in range(self.n_epochs):
+            for x, y in loader:
+                x, y = x.to(self.device), y.to(self.device).long()
+                optimizer.zero_grad()
+                loss = torch.nn.functional.cross_entropy(self.model(x), y)
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(params, self.grad_clip)
+                optimizer.step()
+        self.model.train(was_training)
+        for p, r in zip(self.model.parameters(), req_grad):
+            p.requires_grad_(r)
+        self.mods = {k: v.detach().clone() for k, v in self.model.state_dict().items()}
+        self.model.load_state_dict(self.original_state)  # leave a clean model
+
+    def refine(self):
+        if not self.is_refined:
+            super().refine()
+            self.model.load_state_dict(self.mods)
+
+    def unrefine(self):
+        if self.is_refined:
+            super().unrefine()
+            self.model.load_state_dict(self.original_state)
+
+    def get_filename(self) -> str:
+        return f"retrain_ne{self.n_epochs}_lr{self.lr}.pkl"
 
 
 class WeightMagnitudePruner(StaticRefiner):

@@ -155,11 +155,11 @@ def get_refinement_hyperparams(refinement_name:str):
         }
     elif refinement_name == "retrain":
         hyperparams = {
-            "n_steps": [1,5,10,20,30,50,100,200,300,400,500,700]
+            "n_epochs": [1,5,10,20,30,50,100]
         }
-    elif refinement_name == "ridge":
+    elif refinement_name in ("ridge", "rgem"):
         hyperparams = {
-            "lmbda": sorted([1./(10**i) for i in range(4)] + [5./(10**i) for i in range(1,4)] + [10**i for i in range(7)][1:])
+            "lmbda": [10.**i for i in range(-4, 5)]
         }
     elif refinement_name == "wegem":
         hyperparams = {
