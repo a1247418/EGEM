@@ -74,11 +74,11 @@ Items marked **[fixed on branch]** have a minimal fix applied; the rest are open
 - No fixed seeds for PCA (`torch.pca_lowrank` is randomized) -> reps are not bit-reproducible.
 
 ## Dependencies / packaging
-- `src/requirements.txt` misses imported packages: `timm` (<1.0), `nptyping` (<2, the 2.x API
-  breaks `NDArray[float]`), `scipy`, `scikit-learn`, `frozendict`, `pytorch_lightning`, `opencv`.
-  Most come from the vendored `cxai` decomposition code, which is imported unconditionally by
-  `run.py` even when no decomposition is used -> make that import lazy.
-- `numpy<2` is required (matplotlib/torch 2.2 wheels built against numpy 1.x); pin it.
+- **[fixed on branch]** `src/requirements.txt` missed imported packages: scikit-learn and
+  pytorch_lightning for the core code, plus `timm` (<1.0), `nptyping` (<2), `scipy`, `frozendict` and
+  `opencv` for the vendored `cxai` decomposition code. They are now listed (cxai ones as optional,
+  since `cxai` is imported lazily).
+- **[fixed on branch]** `numpy<2` is required (matplotlib/torch 2.2 wheels are built against numpy 1.x); now pinned.
 - **[fixed on branch]** Imports were inconsistent: `refinement.*`, `src.refinement.*` (explainer.py:11)
   and bare `cxai.*` were all used, so three different `sys.path` roots were needed. Now everything
   imports relative to `src/` (run `python src/run.py` from the repo root), and `cxai` is imported
