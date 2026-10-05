@@ -1,4 +1,5 @@
 import os
+import copy
 import pdb
 from typing import Optional, List, Dict, Tuple
 import torch
@@ -685,6 +686,8 @@ class RetrainRefiner(BaseRefiner):
     """Retrain baseline (paper Supp. F.3): fine-tune all layers on the refinement data with Adam and
     cross-entropy, no extra regularization, batch-norm frozen, gradient norm clipped."""
 
+    _cache = None  # (key, epochs trained, model state, optimizer state) of the last run
+
     def __init__(
         self,
         model: torch.nn.Module,
@@ -718,7 +721,16 @@ class RetrainRefiner(BaseRefiner):
                 m.eval()  # keep running statistics fixed
         optimizer = torch.optim.Adam(params, lr=self.lr)
         loader = DataLoader(train_loader.dataset, batch_size=train_loader.batch_size, shuffle=True)
-        for epoch in range(self.n_epochs):
+        # The epoch grid is searched in ascending order: continue from the previous run on the same data
+        # instead of retraining from scratch (100 instead of 216 epochs for the paper's grid).
+        key = (self.model, train_loader, self.lr, self.grad_clip)
+        start = 0
+        cache = RetrainRefiner._cache
+        if cache is not None and all(a is b or a == b for a, b in zip(cache[0], key)) and cache[1] <= self.n_epochs:
+            self.model.load_state_dict(cache[2])
+            optimizer.load_state_dict(cache[3])
+            start = cache[1]
+        for epoch in range(start, self.n_epochs):
             for x, y in loader:
                 x, y = x.to(self.device), y.to(self.device).long()
                 optimizer.zero_grad()
@@ -730,6 +742,7 @@ class RetrainRefiner(BaseRefiner):
         for p, r in zip(self.model.parameters(), req_grad):
             p.requires_grad_(r)
         self.mods = {k: v.detach().clone() for k, v in self.model.state_dict().items()}
+        RetrainRefiner._cache = (key, self.n_epochs, self.mods, copy.deepcopy(optimizer.state_dict()))
         self.model.load_state_dict(self.original_state)  # leave a clean model
 
     def refine(self):
