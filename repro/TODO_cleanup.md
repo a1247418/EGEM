@@ -1,0 +1,91 @@
+# Repo cleanup TODOs for a clean EGEM reproduction
+
+Collected while reproducing Linhardt et al., "Preemptively Pruning Clever-Hans Strategies
+in Deep Neural Networks" (Information Fusion 2024, arXiv:2304.05727) on branch `reproduce-egem`.
+Items marked **[fixed on branch]** have a minimal fix applied; the rest are open.
+
+## Blocking bugs (code does not run / gives wrong numbers)
+- **[fixed on branch]** `src/refinement/decomposition/decomposer.py:527` uses `Optional[A, B]`,
+  which raises `TypeError` at import, so `run.py` cannot start. Needs `Optional[Union[A, B]]`.
+- **[fixed on branch]** `src/models/custom_model.py:19` loads state dicts with `map_location=None`;
+  `mnist.model` was saved on CUDA, so loading fails on CPU-only machines.
+- `src/run.py` picks the reported hyperparameter by **best test accuracy**
+  (`if best is None or result["top1"] > best["top1"]`). That is test-set leakage and is not the
+  paper's procedure (strongest refinement whose *validation* accuracy is within s% slack of the
+  unrefined model's). **[partly fixed on branch]** `orig_top1_val` is now stored per result so the
+  paper's selection can be done post hoc (`repro/analyze.py`); the in-script selection is still wrong.
+- `src/run.py` `__main__` passes `decomposition_type=args.explanation_type` (should be
+  `args.decomposition_type`), so any CLI run tries to build a decomposer named after the LRP rule.
+- `src/run.py` CLI offers `--poisoning_strategy targeted` but `CH_datasets.scenario_examples`
+  expects `"target"` -> ValueError.
+- **[fixed on branch]** `src/experiment_config.py` mnist-rgb branch tested `"artifact" in "experiment_name"`
+  (a string literal, always False), so all MNIST-RGB variants silently loaded **random weights**.
+- **[fixed on branch, reconstructed]** `src/data/data_loading.py` listed scenarios `"minst-8_rgb-*"`
+  (typo) and `CH_datasets` had no scenario/poisoner for the Section 5 variants at all. The branch adds
+  `mnist-rgb-{artifact,blur,color,remove}` with poisoners *reconstructed* from the released weights
+  and calibrated to Fig. 6 (see `repro/probe_mnist_rgb.py`). The authors' original
+  definitions (blur kernel, tint, removed region) should replace them if they can be found.
+- **[fixed on branch]** `run.py` disabled normalization only for `"mnist-8"`; the RGB-MNIST models
+  were also trained on unnormalized inputs.
+- `run.py` verbose plotting hard-codes `device="cuda"`.
+
+## Paper/code mismatches to resolve or document
+- Paper: refinement data = only **correctly predicted** clean samples, 700 per class with
+  oversampling. Code: `evaluation.get_n_shot_data` takes any samples (no correctness filter).
+- Paper (Supp. F.3) alpha grid {1e-5, 1e-4, 1e-3, 0.01, 0.1, ..., 0.9, 1};
+  `experiment_config.get_refinement_hyperparams` uses {0.001, 0.01, 0.1, ..., 0.9, 0.99}.
+- Paper Ridge/RGEM lambda grid {1e-4 ... 1e4}; code uses a different grid.
+- Paper's "Retrain" and "RGEM" baselines are not exposed in `run.py`
+  (`retrain` has hyperparams but no refiner class; RGEM vs Ridge distinction unclear).
+- Paper MNIST available data = 700 samples total (Table 1); CH_datasets ships
+  `mnist_refinement_idcs.npy` with 39,942 indices.
+- Paper says the ISIC model is VGG-16 fine-tuned with 2 output nodes; config uses 8 classes
+  (`vgg16_isic`, target 1, background 0,2..7).
+- README of CH_datasets says ISIC 2019 data; ISIC model weights (`isic_vgg16.model`) are not in the
+  repo or its history -> must be retrained (no training script/config for it).
+
+- MNIST net in `blueprints.py` (conv 3x3/3x3, FC 784->500) differs from paper Table E.2
+  (conv 3/5, FC 200). The released `mnist.model` matches the code, so the table is probably wrong.
+- The 1000-sample MNIST test subset is drawn once per process, so all reps share the same test
+  set (std over reps of the unrefined model is exactly 0); the paper draws 1000 per run.
+- Paper Fig. 3: Ridge stays within 4% on poisoned MNIST; here Ridge (one-hot targets, code grid)
+  reaches only 0.89 poisoned at 5% slack. Check whether the paper's Ridge/RGEM differ from `RegressionRefiner`.
+
+## Missing pieces for reproduction
+- No README (root README is just `# EGEM`): no install, data, or run instructions.
+- No script that produces the paper's figures/tables (Fig. 3, 4, 6, 7, G/H/I) from results.
+- Model weights: only `mnist.model` at HEAD. `mnist-rgb-*.model` and `celeba_vgg16.model`
+  exist only in git history (`e9b127c`, deleted in `d896bad`); ISIC weights never committed.
+  ImageNet experiments use torchvision pretrained weights (fine).
+- Datasets: no download helper. MNIST loader in CH_datasets has no `download=True`.
+  ImageNet needs a local copy (6 classes only); ISIC 2019 must be downloaded manually.
+- No fixed seeds for PCA (`torch.pca_lowrank` is randomized) -> reps are not bit-reproducible.
+
+## Dependencies / packaging
+- `src/requirements.txt` misses imported packages: `timm` (<1.0), `nptyping` (<2, the 2.x API
+  breaks `NDArray[float]`), `scipy`, `scikit-learn`, `frozendict`, `pytorch_lightning`, `opencv`.
+  Most come from the vendored `cxai` decomposition code, which is imported unconditionally by
+  `run.py` even when no decomposition is used -> make that import lazy.
+- `numpy<2` is required (matplotlib/torch 2.2 wheels built against numpy 1.x); pin it.
+- Imports are inconsistent: `refinement.*`, `src.refinement.*` (explainer.py:11) and bare `cxai.*`
+  are all used, so three different `sys.path` roots are needed. Make `src` a proper package
+  (e.g. `egem/`) with a `pyproject.toml`, and use relative or package-absolute imports.
+- `CH_datasets` is a git submodule over SSH (`git@github.com:...`) -> fails for anonymous clones;
+  switch to https.
+
+## Performance
+- **[fixed on branch for EGEM/PCA-EGEM, via a one-entry cache in `EGEMRefiner`]** Every hyperparameter value re-extracts activations and re-fits PCA (`train_refinement` inside
+  the alpha loop), although both are independent of alpha -> cache once per rep. PCA-EGEM on
+  MNIST takes ~10 min/rep on CPU vs <1 min for EGEM.
+- `DataLoader(num_workers=8)` is hard-coded in `load_scenario`; make it configurable (oversubscribes
+  CPUs when several runs share a node).
+
+## Repo hygiene
+- Five large Colab notebooks at the root (`CEGEM_*.ipynb`, `Per_digt_EGEM_*.ipynb`, ~2.9 MB with
+  outputs) are later student experiments (CEGEM, per-digit EGEM), not part of the paper ->
+  move to `experiments/` or a separate branch, strip outputs.
+- Dead code: commented-out `_get_balanced_data` in `data_loading.py` ("TODO: remove"),
+  `get_default_layer_names` ("TODO: remove?"), `PCAMultiplierNet` (incomplete), `pdb` imports,
+  NLP/ViT paths (out of scope for the vision reproduction).
+- `run.py` writes results to a relative `results/` folder; refiners pickle `self.mods` with
+  live tensors on the training device.

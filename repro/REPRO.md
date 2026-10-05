@@ -1,0 +1,116 @@
+# EGEM reproduction notes (branch `reproduce-egem`)
+
+Target paper: Linhardt, Müller, Montavon, *Preemptively Pruning Clever-Hans Strategies in Deep
+Neural Networks*, Information Fusion 2024 (arXiv:2304.05727). The NLP use case is out of scope.
+Cleanup items found along the way are listed in [`TODO_cleanup.md`](TODO_cleanup.md).
+
+## Status
+
+| Experiment (paper) | Status |
+|---|---|
+| MNIST-8, Fig. 3 | **Reproduced** (Original, Ridge, EGEM, PCA-EGEM; no Retrain/RGEM in code) |
+| MNIST-8, sample-size sweep (Supp. H) | **Reproduced** for Ridge / EGEM / PCA-EGEM, 5–700 samples per class |
+| MNIST CH variants, Fig. 6 | **Partly reproduced**: weights restored from git history; the poisoners were never released, so they are reconstructed and calibrated (see below) |
+| Sparsity, Fig. 7 | Partly: the Linear_1 column matches; MaxPool2d / Linear_2 do not |
+| ISIC, Fig. 3 | Blocked: ISIC 2019 data not downloaded, `isic_vgg16.model` never committed (needs retraining) |
+| ImageNet carton/mtb, Fig. 3 | Blocked: needs ImageNet train+val for 6 classes (the data on the cluster is outside `$HOME`) |
+| CelebA, Sec. 6 | Not attempted (qualitative; `celeba_vgg16.model` is in git history) |
+
+## How to run
+
+```bash
+# environment (the shared `fv` env has a numpy-2/matplotlib ABI clash)
+conda create -p ~/.conda/envs/egem python=3.10
+~/.conda/envs/egem/bin/pip install "numpy<2" pandas Pillow tqdm matplotlib seaborn torch==2.2.2 \
+    torchvision==0.17.2 zennit==0.5.0 scikit-learn scipy "timm<1" frozendict "nptyping<2" pytorch_lightning
+# MNIST is downloaded with torchvision to ~/EGEM_work/data
+cd EGEM   # repo root
+python repro/run_mnist.py --scenario mnist-8 --refinement {none,egem,pcaegem,ridge} \
+       --poisoning {none,uniform} --n_samples 700 --n_reps 5
+python repro/analyze.py --scenario mnist-8 --n 700 --slack 0.01 0.05   # paper's selection rule
+python repro/make_figures.py
+```
+Everything runs on CPU. One EGEM/Ridge run (5 reps × 12 hyperparameters) takes about 5 min. PCA-EGEM takes
+3–10 min per rep, dominated by sklearn's full SVD.
+
+**Hyperparameter selection.** `run.py` keeps the hyperparameter with the best *test* accuracy. That
+leaks the test set, and it is not what the paper does. `analyze.py` implements the paper's rule
+(Sec. 4.5): per rep, take the strongest refinement whose validation accuracy is at most `slack`
+below the unrefined model's validation accuracy. All numbers below use 5% slack.
+
+## Results
+
+Mean ± std over 5 reps (the test set is 1000 MNIST test images, fixed across reps). "clean" = 0%
+poisoning, "poisoned" = uniform 100% poisoning (the CH feature is added to every test image).
+
+### MNIST-8 (paper Fig. 3), 700 samples/class — `figures/fig3_mnist.png`
+
+| Method | clean | poisoned | chosen hyperparameter |
+|---|---|---|---|
+| Original | 0.989 ± 0.000 | 0.691 ± 0.000 | – |
+| Ridge | 0.953 ± 0.002 | 0.891 ± 0.003 | λ = 1e5 |
+| EGEM | 0.971 ± 0.001 | 0.969 ± 0.001 | α = 0.3 |
+| PCA-EGEM | 0.975 ± 0.001 | 0.969 ± 0.003 | α = 0.1 |
+
+Paper: the original model loses ~30 points under poisoning (reproduced: −30 points). EGEM and PCA-EGEM end
+within 4 points of the original clean accuracy with "virtually no gap" between clean and poisoned
+(reproduced: −1.4 to −2.0 points, gap ≤ 0.6 points). At 1% slack, EGEM gets 0.984 / 0.971 and PCA-EGEM 0.983 / 0.978.
+**Deviation:** the paper also has Ridge within 4 points. Here Ridge (one-hot targets, code's λ grid) reaches
+only 0.89 on poisoned data.
+
+### Sample-size sweep (Supp. H), MNIST-8 — `figures/figH_samples.png`
+
+| samples/class | EGEM clean / pois. | PCA-EGEM clean / pois. | Ridge clean / pois. |
+|---|---|---|---|
+| 5 | 0.967 / 0.968 | 0.813 / 0.812 | 0.749 / 0.740 |
+| 10 | 0.958 / 0.956 | 0.917 / 0.915 | 0.838 / 0.779 |
+| 50 | 0.956 / 0.951 | 0.958 / 0.955 | 0.942 / 0.854 |
+| 200 | 0.966 / 0.964 | 0.974 / 0.968 | 0.946 / 0.872 |
+| 700 | 0.971 / 0.969 | 0.975 / 0.969 | 0.953 / 0.891 |
+
+EGEM is robust down to 5 samples per class. PCA-EGEM needs ≥ 50 per class. With fewer samples the PCA basis
+has rank < layer width, and every direction outside it is pruned to zero, which also costs clean accuracy.
+
+### MNIST CH-feature variants (paper Fig. 6), 50 samples/class — `figures/fig6_mnist_variants.png`
+
+| Feature | Original clean / pois. | EGEM clean / pois. | PCA-EGEM clean / pois. | paper Original pois. (read from Fig. 6) |
+|---|---|---|---|---|
+| artifact | 0.990 / 0.513 | 0.970 / 0.966 | 0.966 / 0.967 | ~0.69 |
+| blur | 0.982 / 0.949 | 0.956 / 0.911 | 0.968 / 0.950 | ~0.91 |
+| color | 0.961 / 0.903 | 0.925 / 0.827 | 0.928 / 0.879 | ~0.91 |
+| remove | 0.988 / 0.852 | 0.956 / 0.802 | 0.978 / 0.955 | ~0.77 |
+
+The paper's qualitative claims hold. EGEM removes the localized additive artifact but *lowers*
+poisoned accuracy for non-additive features (blur, color, remove). PCA-EGEM is at least as good as EGEM
+everywhere, and it fixes `remove` (0.852 → 0.955). On blur and color it does not beat the
+unrefined model, unlike the paper. Caveats:
+- The paper (5 % slack, 50/class) used 10 reps. This run used 5.
+- **The poisoners are reconstructions.** The weights `mnist-rgb-*.model` come from git history (`e9b127c`),
+  but the code that made the poisoned data was never committed. `probe_mnist_rgb.py` identifies the
+  feature type each model reacts to: the 3-pixel artifact, Gaussian blur, a cyan tint (the paper's
+  Fig. 6 shows cyan), and removal of the lower rows. Strengths were then calibrated so the original
+  models roughly match Fig. 6: blur k=5/σ=1, red channel ×0.85, lower 28% removed. The artifact is
+  the exact mnist-8 definition, yet it hurts this model more than the paper reports (0.51 vs ~0.69).
+  So the RGB artifact model was probably trained or evaluated with a different artifact.
+
+### Sparsity of the CH-induced representation change (paper Fig. 7) — `sparsity_fig7.py`
+
+| Feature | MaxPool2d | Linear_1 | Linear_2 | paper (MaxPool2d / Linear_1 / Linear_2) |
+|---|---|---|---|---|
+| artifact | 0.244 | 0.202 | 0.095 | ~0.10 / 0.22 / 0.62 |
+| blur | 0.060 | 0.073 | 0.114 | ~0.11 / 0.07 / 0.27 |
+| color | 0.066 | 0.076 | 0.112 | ~0.11 / 0.07 / 0.19 |
+| remove | 0.129 | 0.117 | 0.116 | ~0.11 / 0.12 / 0.33 |
+
+The Linear_1 column matches (the artifact is the sparsest). The other columns depend on where the paper
+tapped the activations. Here they are the inputs of the refined layers `features.3/7/9`, and no tap
+point in the network reproduces the paper's artifact value of 0.62 at Linear_2.
+
+## Next steps
+1. ImageNet tasks (carton/crate/envelope/packet, mtb/bbt): they need a local ImageNet copy of 6 classes plus
+   validation. Pretrained torchvision weights are fine. A GPU job is needed (VGG-16/ResNet-50 with
+   12 α values × 5 reps): a single 40 GB A100 or a GPU shard, a few hours.
+2. ISIC: download ISIC 2019, retrain `vgg16_isic` (weights were never released), and redo the manual
+   removal of patch images from the refinement data. Needs a GPU.
+3. Missing baselines: Retrain and RGEM (not exposed in `run.py`).
+4. Work through `TODO_cleanup.md`. The test-leaking selection in `run.py` and the lazy `cxai` import come first.
