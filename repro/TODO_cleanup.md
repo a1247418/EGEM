@@ -63,7 +63,7 @@ Items marked **[fixed on branch]** have a minimal fix applied; the rest are open
   `repro/train_isic.py` follows Supp. E instead.
 
 ## Missing pieces for reproduction
-- No README (root README is just `# EGEM`): no install, data, or run instructions.
+- **[fixed on branch]** No README (the root README was just `# EGEM`): it now has install, data, quick-start and layout sections.
 - No script that produces the paper's figures/tables (Fig. 3, 4, 6, 7, G/H/I) from results.
 - Model weights: only `mnist.model` at HEAD. `mnist-rgb-*.model` and `celeba_vgg16.model`
   exist only in git history (`e9b127c`, deleted in `d896bad`); ISIC weights never committed.
