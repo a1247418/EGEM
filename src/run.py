@@ -60,6 +60,7 @@ def parseargs():
     aa("--layer_names", type=str, nargs="+", default=None)
     aa("--subfolder", type=str, default=None)
     aa("--skip_existing", action="store_true")
+    aa("--num_workers", type=int, default=8, help="Data loader workers")
     aa("--slack", type=float, default=0.05, help="Slack for the paper's hyperparameter selection (Sec. 4.5)")
     args = parser.parse_args()
     return args
@@ -93,7 +94,8 @@ def get_refiner_class(refinement_name: str):
 def get_data_loaders(scenario_name, data_root, exp):
     kwargs = {"normalize": True,
               "val_batch_size": exp["batch_size"],
-              "refine_batch_size": exp["batch_size"]
+              "refine_batch_size": exp["batch_size"],
+              "num_workers": exp["num_workers"],
               }
     # poisoned_kwargs = {}
     if exp["n_test"] is not None:
@@ -467,7 +469,8 @@ if __name__ == "__main__":
             layer_names=args.layer_names,
             refiner_kwargs=args.refiner_kwargs,
             explanation_type=args.explanation_type,
-            decomposition_type=args.decomposition_type
+            decomposition_type=args.decomposition_type,
+            num_workers=args.num_workers
     )
 
     for sel in select_by_slack(results, args.refinement, args.slack):

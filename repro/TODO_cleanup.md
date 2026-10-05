@@ -93,8 +93,8 @@ Items marked **[fixed on branch]** have a minimal fix applied; the rest are open
 - **[fixed on branch for EGEM/PCA-EGEM, via a one-entry cache in `EGEMRefiner`]** Every hyperparameter value re-extracts activations and re-fits PCA (`train_refinement` inside
   the alpha loop), although both are independent of alpha -> cache once per rep. PCA-EGEM on
   MNIST takes ~10 min/rep on CPU vs <1 min for EGEM.
-- `DataLoader(num_workers=8)` is hard-coded in `load_scenario`; make it configurable (oversubscribes
-  CPUs when several runs share a node).
+- **[fixed on branch]** `DataLoader(num_workers=8)` was hard-coded in `load_scenario`; it is now
+  `--num_workers` (default 8) in `run.py` and the repro driver.
 
 ## Repo hygiene
 - Five large Colab notebooks at the root (`CEGEM_*.ipynb`, `Per_digt_EGEM_*.ipynb`, ~2.9 MB with

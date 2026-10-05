@@ -11,6 +11,7 @@ def get_experiment_config(experiment_name: str, refinement: str):
         "n_reps": 5,
         "explanation_type": "epsilon_alpha2_beta1_flat",#"epsilon_plus_flat" #"epsilon_gamma_box"#"gradient" #
         "decomposition_type": "none",
+        "num_workers": 8,  # data loader workers
     }
     if any([s in experiment_name for s in ("carton", "mountain-bike", "mtb")]):
         if "carton-crate" in experiment_name:

@@ -144,6 +144,7 @@ def load_scenario(
     shuffle_train: bool = True,
     normalize: bool = True,
     val_set_size: Optional[int] = None,
+    num_workers: int = 8,
 ):
     # To prevent too many open files error
     torch.multiprocessing.set_sharing_strategy("file_system")
@@ -179,7 +180,7 @@ def load_scenario(
         **kwargs,
     )
 
-    partial_loader = partial(DataLoader, num_workers=8, shuffle=shuffle_train)
+    partial_loader = partial(DataLoader, num_workers=num_workers, shuffle=shuffle_train)
     train_loader = partial_loader(
         dataset=scenario.get_data("train"), batch_size=train_batch_size
     )
