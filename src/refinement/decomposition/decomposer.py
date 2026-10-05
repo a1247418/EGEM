@@ -524,7 +524,7 @@ class SAEDecomposer(Decomposer):
     # Sparse Autoencoder Decomposer, implemnetation based on https://transformer-circuits.pub/2023/monosemantic-features/index.html
     def __init__(
         self,
-        data: Optional[torch.Tensor, torch.utils.data.Dataset],
+        data: Optional[Union[torch.Tensor, torch.utils.data.Dataset]],
         upsampling_factor: int,
         epochs: int = 100,
         learning_rate: float = 1e-4,

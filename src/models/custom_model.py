@@ -16,7 +16,7 @@ class _Module(nn.Module):
         self.features = nn.ModuleList(feature_list)
 
         if state_dict_path is not None:
-            state_dict = torch.load(state_dict_path, map_location=load_to_device)
+            state_dict = torch.load(state_dict_path, map_location=load_to_device or "cpu")  # load_model moves the model to the target device
             self.load_state_dict(state_dict)
             print("Loaded model state dict from %s." % state_dict_path)
         else:
