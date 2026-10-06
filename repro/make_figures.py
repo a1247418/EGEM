@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from analyze import load, select
 
-RES, OUT, SLACK = "repro/results", "repro/figures", 0.05
+RES, OUT, SLACK = "repro/results", os.environ.get("FIG_OUT", "repro/figures"), 0.05
 METHODS = {"none": "Original", "retrain": "Retrain", "ridge": "Ridge", "rgem": "RGEM", "egem": "EGEM",
            "pcaegem": "PCA-EGEM"}
 CLEAN, POIS = "#2a78d6", "#eb6834"
@@ -103,22 +103,59 @@ axs[0, 1].legend(frameon=False, loc="center left", bbox_to_anchor=(1.02, 0.5))
 fig.tight_layout(); fig.savefig(f"{OUT}/accuracy_vs_slack.png", dpi=150)
 print("wrote accuracy_vs_slack.png")
 
-# CelebA blond-hair recall per attribute subgroup (celeba_recall.py)
-f9 = os.path.join(RES, "celeba_recall.csv")
-if os.path.exists(f9):
+# CelebA: precision and recall of blond hair per attribute subgroup, LRP heatmaps, wall examples, correlations
+CELEBA = os.environ.get("CELEBA_RESULTS", os.path.join(RES, "celeba_recall"))
+if os.path.exists(CELEBA + ".csv"):
     import pandas as pd
-    d = pd.read_csv(f9).sort_values("recall_orig")
+    d = pd.read_csv(CELEBA + ".csv").sort_values("recall_orig")
     x = np.arange(len(d))
-    fig, ax = plt.subplots(figsize=(13.5, 3.8))
-    ax.bar(x - 0.2, d.recall_orig, 0.4, color=CLEAN, label="Original", edgecolor=SURF, linewidth=1)
-    ax.bar(x + 0.2, d.recall_refined, 0.4, color=POIS, label="PCA-EGEM (slack-selected α)", edgecolor=SURF, linewidth=1)
-    ax.set_xticks(x, [f"{a} ({n})" for a, n in zip(d.attribute, d.n_blond)], rotation=90, fontsize=7)
-    ax.set_ylabel("Recall of Blond_Hair"); ax.set_ylim(0, 1.02)
-    ax.yaxis.grid(True, color="#e4e3df", linewidth=0.6); ax.set_axisbelow(True)
-    ax.set_title("CelebA: recall per attribute subgroup (number of blond test images in parentheses)", color=INK, fontsize=10)
-    ax.legend(frameon=False, loc="center left", bbox_to_anchor=(1.01, 0.5))
+    series = [("orig", "Original", CLEAN), ("refined", "PCA-EGEM", POIS), ("wall", "Original + wall", "#1baf7a")]
+    fig, axs = plt.subplots(2, 1, figsize=(13.5, 6.5), sharex=True)
+    for ax, metric in zip(axs, ["precision", "recall"]):
+        for k, (key, label, c) in enumerate(series):
+            ax.bar(x + (k - 1) * 0.27, d[f"{metric}_{key}"], 0.27, color=c, label=label, edgecolor=SURF, linewidth=0.5)
+        ax.set_ylabel(f"{metric.capitalize()} of Blond_Hair"); ax.set_ylim(0, 1.02)
+        ax.yaxis.grid(True, color="#e4e3df", linewidth=0.6); ax.set_axisbelow(True)
+    axs[1].set_xticks(x, [f"{a} ({n})" for a, n in zip(d.attribute, d.n_blond)], rotation=90, fontsize=7)
+    axs[0].legend(frameon=False, loc="center left", bbox_to_anchor=(1.01, 0.5))
+    axs[0].set_title("CelebA: per attribute subgroup (number of blond test images in parentheses)", color=INK, fontsize=10)
     fig.tight_layout(); fig.savefig(f"{OUT}/celeba_recall.png", dpi=150)
     print("wrote celeba_recall.png")
+
+    h = np.load(CELEBA + "_heatmaps.npz")
+    unnorm = lambda t: np.clip(t.transpose(1, 2, 0) * h["std"] + h["mean"], 0, 1)
+    n = len(h["idx"])
+    fig, axs = plt.subplots(3, n, figsize=(1.9 * n, 6.6), squeeze=False)
+    for k in range(n):
+        axs[0, k].imshow(unnorm(h["images"][k]))
+        for r, (R, s_) in enumerate([(h["R_orig"][k], h["score_orig"][k]), (h["R_refined"][k], h["score_refined"][k])], 1):
+            lim = np.abs(R).max() + 1e-12
+            axs[r, k].imshow(R, cmap="bwr", vmin=-lim, vmax=lim)
+            axs[r, k].set_title(f"blond score {s_:.1f}", fontsize=7, color=MUTED)
+    for ax in axs.ravel():
+        ax.set_xticks([]); ax.set_yticks([])
+    for r, label in enumerate(["image", "LRP original", "LRP PCA-EGEM"]):
+        axs[r, 0].set_ylabel(label, fontsize=9)
+    fig.tight_layout(); fig.savefig(f"{OUT}/celeba_heatmaps.png", dpi=150)
+
+    ex = h["wall_examples"]
+    fig, axs = plt.subplots(2, len(ex), figsize=(1.9 * len(ex), 4.6))
+    for k, img in enumerate(ex):
+        walled = img.copy(); walled[:, -50:, :] = h["wall"]
+        axs[0, k].imshow(unnorm(img)); axs[1, k].imshow(unnorm(walled))
+    for ax in axs.ravel():
+        ax.set_xticks([]); ax.set_yticks([])
+    axs[0, 0].set_ylabel("original", fontsize=9); axs[1, 0].set_ylabel("occluded", fontsize=9)
+    fig.tight_layout(); fig.savefig(f"{OUT}/celeba_wall.png", dpi=150)
+
+    corr = pd.read_csv(CELEBA + "_attr_corr.csv", index_col=0)
+    fig, ax = plt.subplots(figsize=(9, 8))
+    im = ax.imshow(corr.values, cmap="RdBu_r", vmin=-1, vmax=1)
+    ax.set_xticks(range(len(corr)), corr.columns, rotation=90, fontsize=6)
+    ax.set_yticks(range(len(corr)), corr.index, fontsize=6)
+    fig.colorbar(im, ax=ax, shrink=0.8, label="correlation")
+    fig.tight_layout(); fig.savefig(f"{OUT}/celeba_attr_corr.png", dpi=150)
+    print("wrote celeba_heatmaps.png, celeba_wall.png, celeba_attr_corr.png")
 
 # separability of clean vs. CH-poisoned images per layer (layer_separability.py)
 f_sep = os.path.join(RES, "layer_separability.csv")

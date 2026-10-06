@@ -133,8 +133,9 @@ for alpha in sorted(a.alphas):  # strongest (smallest alpha) first
     if val_acc >= 1.0 - a.slack or alpha == max(a.alphas):
         chosen = alpha
         s_ref = scores(test)
-        # images whose blond score increases most; LRP for 'blond' after and before refinement
-        top = torch.argsort(s_ref - s_orig, descending=True)[:a.n_heatmaps].tolist()
+        # blond images whose blond score increases most; LRP for 'blond' after and before refinement
+        gain = (s_ref - s_orig).masked_fill(~torch.from_numpy(attr[:, BLOND]), -float("inf"))
+        top = torch.argsort(gain, descending=True)[:a.n_heatmaps].tolist()
         R_ref = lrp_maps(top)
         refiner.unrefine()
         R_orig = lrp_maps(top)
