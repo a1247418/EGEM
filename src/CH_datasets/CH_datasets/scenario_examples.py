@@ -3,8 +3,7 @@ from typing import Optional, List
 
 import numpy as np
 import torch
-from torchvision.transforms import Resize, Compose, Lambda
-from torchvision.transforms.functional import gaussian_blur
+from torchvision.transforms import Resize, Compose, Lambda, GaussianBlur
 from CH_datasets.datasets.splits import SingletonIndexStorage
 from CH_datasets.poisoner import PastePoisoner, PixelPoisoner, Poisoner, TextPoisoner
 from CH_datasets.scenario import Scenario, get_default_transform
@@ -195,11 +194,7 @@ class MNISTScenario(Scenario):
         )
 
 
-# --- RGB-MNIST variants of Sec. 5 ("MNIST Revisited"). The original poisoner code was not
-# released; these re-implementations were matched against the released mnist-rgb-*.model weights
-# (see repro/probe_mnist_rgb.py): each makes its own model classify many non-8 digits as 8.
-# Strengths were then calibrated so the unrefined models roughly match the 100%-poisoned accuracy of
-# Fig. 6 in the paper (blur ~0.91, color ~0.91, remove ~0.77); the artifact is the exact mnist-8 one.
+# --- RGB-MNIST variants with different CH features on class 8: pixel artifact, blur, color shift, removal.
 def _to_rgb(img: torch.Tensor) -> torch.Tensor:
     return img.repeat(3, 1, 1) if img.shape[0] == 1 else img
 
@@ -210,16 +205,20 @@ class MNISTRGBArtifactPoisoner(MNISTPoisoner):
 
 
 class MNISTBlurPoisoner(Poisoner):
-    def __init__(self, p: float, classes: Optional[List[int]] = None, kernel_size: int = 5, sigma: float = 1.0):
+    """GaussianBlur with kernel 5 and, as torchvision's default, sigma drawn from [0.1, 2] per image."""
+
+    def __init__(self, p: float, classes: Optional[List[int]] = None, kernel_size: int = 5, sigma=(0.1, 2.0)):
         super().__init__(p, classes, poison_before_tensor=False)
-        self.kernel_size, self.sigma = kernel_size, sigma
+        self.blur = GaussianBlur(kernel_size, sigma)
 
     def _poison(self, img: torch.Tensor) -> torch.Tensor:
-        return gaussian_blur(_to_rgb(img), self.kernel_size, self.sigma)
+        return self.blur(_to_rgb(img))
 
 
 class MNISTColorPoisoner(Poisoner):
-    def __init__(self, p: float, classes: Optional[List[int]] = None, rgb=(0.85, 1.0, 1.0)):
+    """Halves the red channel (a cyan tint)."""
+
+    def __init__(self, p: float, classes: Optional[List[int]] = None, rgb=(0.5, 1.0, 1.0)):
         super().__init__(p, classes, poison_before_tensor=False)
         self.rgb = torch.tensor(rgb)[:, None, None]
 
@@ -228,13 +227,15 @@ class MNISTColorPoisoner(Poisoner):
 
 
 class MNISTRemovePoisoner(Poisoner):
-    def __init__(self, p: float, classes: Optional[List[int]] = None, fraction: float = 0.28):
+    """Removes the lower part of the digit: the bottom 9 rows are set to 0."""
+
+    def __init__(self, p: float, classes: Optional[List[int]] = None, n_rows: int = 9):
         super().__init__(p, classes, poison_before_tensor=False)
-        self.fraction = fraction
+        self.n_rows = n_rows
 
     def _poison(self, img: torch.Tensor) -> torch.Tensor:
         img = _to_rgb(img).clone()
-        img[:, int(img.shape[1] * (1 - self.fraction)):] = 0
+        img[:, -self.n_rows:] = 0
         return img
 
 
