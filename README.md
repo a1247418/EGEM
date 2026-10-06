@@ -21,20 +21,46 @@ pip install -r src/requirements.txt
 
 ## Data
 
-- **MNIST** is downloaded automatically.
-- **ISIC 2019**: download `ISIC_2019_Training_Input.zip` and `ISIC_2019_Training_GroundTruth.csv` from
-  `https://isic-challenge-data.s3.amazonaws.com/2019/` and unzip into one folder (`--data_root`). The model is
-  trained with `repro/train_isic.py` (writes `model_weights/isic_vgg16.model`).
-- **ImageNet**: `torchvision.datasets.ImageNet` layout (devkit + `train/` + `val/`); only the six classes
-  used by the scenarios are needed (wnids n02835271, n02971356, n03127925, n03291819, n03792782, n03871628).
-- **CelebA**: `torchvision.datasets.CelebA(root, download=True)` (requires `gdown`).
+All scripts default to `~/EGEM_work/data` (change it with `--data_root` / `--root` / `--out`).
+
+| Dataset | How to get it | Location |
+|---|---|---|
+| MNIST | downloaded automatically | `~/EGEM_work/data/MNIST` |
+| ISIC 2019 | `ISIC_2019_Training_Input.zip` and `ISIC_2019_Training_GroundTruth.csv` from `https://isic-challenge-data.s3.amazonaws.com/2019/`, unzipped | `~/EGEM_work/data/isic` |
+| ImageNet (6 classes) | `repro/fetch_imagenet_subset.py`, from the gated Hugging Face dataset `ILSVRC/imagenet-1k` (request access, then `huggingface-cli login`) | `~/EGEM_work/data/imagenet` |
+| CelebA | `torchvision.datasets.CelebA(root, download=True)` (needs `gdown`) | `~/EGEM_work/data/celeba_root` |
+
+```bash
+# ISIC 2019 (~10 GB download, 16 GB unpacked)
+mkdir -p ~/EGEM_work/data/isic && cd ~/EGEM_work/data/isic
+B=https://isic-challenge-data.s3.amazonaws.com/2019
+curl -O $B/ISIC_2019_Training_GroundTruth.csv -O $B/ISIC_2019_Training_Input.zip && unzip -q ISIC_2019_Training_Input.zip
+cd -
+
+# ImageNet: keeps only the six classes (~2.7 GB); streams the ~155 GB of shards one at a time
+python repro/fetch_imagenet_subset.py --tmp <scratch dir>        # or: sbatch repro/fetch_imagenet_subset.sbatch
+
+# CelebA
+python -c "import torchvision; torchvision.datasets.CelebA('$HOME/EGEM_work/data/celeba_root', download=True)"
+```
+
+## Models
+
+- MNIST, MNIST variants and CelebA: `model_weights/` (in the repo).
+- ImageNet: torchvision's pretrained ResNet-50 and VGG-16 (downloaded automatically).
+- ISIC: fine-tune VGG-16 once (writes `model_weights/isic_vgg16.model`):
+
+  ```bash
+  python repro/train_isic.py --build_cache       # decode the images once (CPU)
+  python repro/train_isic.py                     # train on a GPU, ~10 min; or: sbatch repro/train_isic.sbatch
+  ```
 
 ## Quick start
 
 Run from the repository root:
 
 ```bash
-python src/run.py --scenario_name mnist-8 --data_root <data dir> --refinement pcaegem \
+python src/run.py --scenario_name mnist-8 --data_root ~/EGEM_work/data --refinement pcaegem \
     --poisoning_strategy uniform --n_samples 700 --n_reps 5
 ```
 
@@ -49,6 +75,46 @@ Each run evaluates the whole hyperparameter grid and saves every result to `resu
 value chosen by slack-based selection: the strongest refinement whose validation accuracy is within
 `--slack` (default 5%) of the original model's (`src/selection.py`).
 
+## Reproducing the experiments
+
+`repro/run_scenario.py` runs one scenario × method × test poisoning and writes a compact result file to
+`repro/results/`. Every accuracy experiment is a loop over it:
+
+```bash
+M="none retrain ridge rgem egem pcaegem"
+# accuracy per method (700 samples/class, 5 reps); ISIC and ImageNet need a GPU
+for sc in mnist-8 isic-1 carton-crate carton-envelope carton-packet mtb-bbt; do
+  root=~/EGEM_work/data; [ $sc = isic-1 ] && root=$root/isic; [[ $sc == carton* || $sc == mtb* ]] && root=$root/imagenet
+  for m in $M; do for p in none uniform; do
+    python repro/run_scenario.py --scenario $sc --data_root $root --refinement $m --poisoning $p
+  done; done
+done
+# number of refinement samples: add --n_samples {5,10,50,200} for MNIST-8, {25,50,200,500} otherwise
+# MNIST CH-feature variants: --scenario mnist-rgb-{artifact,blur,color,remove} --n_samples 50 --n_reps 10
+# logits for the logit-change plot: --n_reps 1 --save_outputs --out repro/results/logits
+```
+
+`repro/run_gpu.sbatch` wraps one such run as a Slurm job (`sbatch repro/run_gpu.sbatch --scenario isic-1 ...`).
+The Slurm scripts use this cluster's partition and resource names; adapt them to yours.
+
+Further analyses, each a single script:
+
+| Script | Computes |
+|---|---|
+| `repro/celeba_recall.py` | CelebA blond-hair precision/recall per attribute subgroup, LRP heatmaps, wall occlusion, attribute correlations (GPU) |
+| `repro/layer_separability.py` | separability of clean vs. poisoned images at every layer |
+| `repro/ch_sparsity.py` | sparsity of the representation change caused by each MNIST CH feature |
+| `repro/isic_diagnose.py` | how much of the patch effect vs. the clean signal survives EGEM / PCA-EGEM per layer |
+| `repro/isic_shortcut_check.py` | whether an ISIC model reacts to the patch's color or its shape |
+
+Plots and tables:
+
+```bash
+python repro/analyze.py --scenario isic-1 --n 700 --slack 0.05    # selected test accuracy per method
+python repro/analyze.py --export repro/results/all_runs.csv       # every run as one table
+python repro/make_figures.py                                      # all plots into repro/figures/
+```
+
 ## Layout
 
 | Path | Content |
@@ -57,7 +123,7 @@ value chosen by slack-based selection: the strongest refinement whose validation
 | `src/run.py`, `src/experiment_config.py` | experiment runner and per-scenario configuration (layers, grids) |
 | `src/CH_datasets/` | vendored CH benchmark tasks (poisoners, splits) |
 | `src/selection.py` | slack-based hyperparameter selection |
-| `model_weights/` | MNIST models (the ISIC model is trained with `repro/train_isic.py`) |
+| `model_weights/` | MNIST and CelebA models (the ISIC model is trained with `repro/train_isic.py`) |
 | `repro/` | experiment drivers, analysis and plotting scripts, results and figures |
 
 ## Citation
