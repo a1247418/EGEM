@@ -88,6 +88,7 @@ class PCAMultiplierLayer(torch.nn.Module):
         pca_Xm: Optional[torch.Tensor] = None,
         cls_token_only: bool = False,
         inverse: bool = False,
+        spatial_sum: bool = False,
     ):
         super(PCAMultiplierLayer, self).__init__()
         self.pca_V = pca_V
@@ -95,6 +96,10 @@ class PCAMultiplierLayer(torch.nn.Module):
         self.multiplier = multiplier
         self.cls_token_only = cls_token_only
         self.inverse = inverse
+        # Conv layers with spatial_sum: the PCA was fitted on per-image channel sums; the refined sums are
+        # turned into a per-image channel rescaling of the feature map (the implementation at the time of the
+        # paper, commit e9b127c). Otherwise every spatial position is projected separately.
+        self.spatial_sum = spatial_sum
 
     def forward(self, x):
         modified_input = x
@@ -125,25 +130,21 @@ class PCAMultiplierLayer(torch.nn.Module):
                     else:
                         modified_input = torch.matmul(modified_input, V)
                         modified_input += Xm
-            elif len(modified_input[0].shape) == 3:
-                # Conv layer
+            elif len(modified_input[0].shape) == 3 and self.spatial_sum:
+                # Conv layer, statistics of per-image channel sums
                 if not self.inverse:
-                    """
                     modified_input_sum = modified_input.sum(dim=[-2, -1])
-                    modified_input_sum_mod = modified_input_sum - Xm
-                    modified_input_sum_mod = torch.matmul(modified_input_sum_mod, V.T)
-                    modified_input_sum_mod *= self.multiplier   
-                    
-                    modified_input_sum_mod = torch.matmul(modified_input_sum_mod, V)
-                    modified_input_sum_mod += Xm
+                    modified_input_sum_mod = torch.matmul(modified_input_sum - Xm, V.T) * self.multiplier
+                    modified_input_sum_mod = torch.matmul(modified_input_sum_mod, V) + Xm
                     channel_multiplier = (
                         modified_input_sum_mod
                         / (modified_input_sum + (modified_input_sum == 0) * 1e-6)
                     )[..., None, None]
-                    modified_input = modified_input * channel_multiplier.detach().to(
-                        modified_input.dtype)
-                    """
-                    #mi = modified_input
+                    modified_input = modified_input * channel_multiplier.detach()
+                # the inverse layer is the identity: the forward layer already maps back
+            elif len(modified_input[0].shape) == 3:
+                # Conv layer
+                if not self.inverse:
                     modified_input = modified_input - Xm[None, :, None, None] # b x c x w x h
                     modified_input = torch.matmul(modified_input.permute(0,2,3,1),V.T) # b x w x h x c'
                     modified_input *= self.multiplier # TODO unsqueeze
@@ -291,7 +292,6 @@ class EGEMRefiner(StaticRefiner):
         self.scaling_rule = scaling_rule
         assert self.do_pca or self.pca_dims is None
         assert self.scaling_rule in ["triangular", "flat", "inverse-triangular"]
-        assert not (self.spatial_sum and self.do_pca), "spatial_sum is only defined for EGEM without PCA"
 
     # Activations and PCA do not depend on alpha, so the hyperparameter search would otherwise redo the
     # (expensive) PCA fit for every alpha. Holds strong references so object identity stays valid.
@@ -367,10 +367,10 @@ class EGEMRefiner(StaticRefiner):
             if self.do_pca:
                 self.mods[layer_name] = torch.nn.Sequential(
                         PCAMultiplierLayer(
-                            multiplier, pca_V[l_i], pca_X[l_i]
+                            multiplier, pca_V[l_i], pca_X[l_i], spatial_sum=self.spatial_sum
                         ),
                         PCAMultiplierLayer(
-                                multiplier, pca_V[l_i], pca_X[l_i], inverse=True
+                                multiplier, pca_V[l_i], pca_X[l_i], inverse=True, spatial_sum=self.spatial_sum
                         )
                 )
             else:
