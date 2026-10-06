@@ -3,10 +3,11 @@ from typing import Optional, List
 
 import numpy as np
 import torch
-from torchvision.transforms import Resize, Compose, Lambda, GaussianBlur
+from torch.utils.data import ConcatDataset, Subset
+from torchvision.transforms import Resize, Compose, Lambda, GaussianBlur, RandomHorizontalFlip
 from CH_datasets.datasets.splits import SingletonIndexStorage
 from CH_datasets.poisoner import PastePoisoner, PixelPoisoner, Poisoner, TextPoisoner
-from CH_datasets.scenario import Scenario, get_default_transform
+from CH_datasets.scenario import Scenario, get_dataset, get_default_transform, poison_dataset
 from CH_datasets.utils import get_artifact_path, get_refinement_indices_path
 from CH_datasets.datasets.imagenet_classes import imagenet_id2label, imagenet_label2id
 
@@ -73,7 +74,11 @@ class ImageNetScenario(Scenario):
         normalize: bool = True,
         poisoning_stategy_test: str = "uniform",
         poisoner_kwargs: Optional[dict] = None,
+        flip_test: bool = True,
     ):
+        """flip_test: add a horizontally flipped copy of every test image (flipped before the artifact is added)."""
+        self.flip_test = flip_test
+        self._flipped_test = None
 
         self.label_mapping = {
             c: i for i, c in enumerate([target_class] + background_classes)
@@ -132,6 +137,18 @@ class ImageNetScenario(Scenario):
             target_transform=target_transform,
         )
 
+
+    def get_data(self, split: str):
+        data = super().get_data(split)
+        if split != "test" or not self.flip_test:
+            return data
+        if self._flipped_test is None:
+            flipped = get_dataset(self.dataset, self.dataset_dir, train=False)
+            flipped.transform = Compose([RandomHorizontalFlip(p=1.0)] + list(self.transform.transforms))
+            flipped.target_transform = self.target_transform
+            poison_dataset(flipped, self.test_poisoner)
+            self._flipped_test = ConcatDataset([data, Subset(flipped, self.test_idcs)])
+        return self._flipped_test
 
 class MNISTPoisoner(PixelPoisoner):
     def __init__(self, p: float, classes: Optional[List[int]] = None):
