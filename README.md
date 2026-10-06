@@ -9,6 +9,8 @@ validated on a small set of clean, correctly explained samples. Clever-Hans (CH)
 user never saw lose their influence. PCA-EGEM does the same in a PCA basis of each layer's
 activations.
 
+![EGEM overview](docs/overview.png)
+
 ## Install
 
 ```bash
