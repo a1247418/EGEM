@@ -19,9 +19,13 @@ pip install -r src/requirements.txt
 
 ## Data
 
-MNIST is downloaded automatically. ISIC 2019 and ImageNet must be downloaded by hand; see
-[`repro/DATA.md`](repro/DATA.md) for commands, the expected layout and the model weights (the ISIC model
-is trained with `repro/train_isic.py`).
+- **MNIST** is downloaded automatically.
+- **ISIC 2019**: download `ISIC_2019_Training_Input.zip` and `ISIC_2019_Training_GroundTruth.csv` from
+  `https://isic-challenge-data.s3.amazonaws.com/2019/` and unzip into one folder (`--data_root`). The model is
+  trained with `repro/train_isic.py` (writes `model_weights/isic_vgg16.model`).
+- **ImageNet**: `torchvision.datasets.ImageNet` layout (devkit + `train/` + `val/`); only the six classes
+  used by the scenarios are needed (wnids n02835271, n02971356, n03127925, n03291819, n03792782, n03871628).
+- **CelebA**: `torchvision.datasets.CelebA(root, download=True)` (requires `gdown`).
 
 ## Quick start
 
@@ -40,7 +44,7 @@ python src/run.py --scenario_name mnist-8 --data_root <data dir> --refinement pc
   `mtb-bbt`.
 
 Each run evaluates the whole hyperparameter grid and saves every result to `results/`. It prints the
-value chosen by the paper's rule: the strongest refinement whose validation accuracy is within
+value chosen by slack-based selection: the strongest refinement whose validation accuracy is within
 `--slack` (default 5%) of the original model's (`src/selection.py`).
 
 ## Layout
@@ -50,17 +54,12 @@ value chosen by the paper's rule: the strongest refinement whose validation accu
 | `src/refinement/refiner.py` | EGEM / PCA-EGEM and the baselines (Retrain, Ridge, RGEM, ...) |
 | `src/run.py`, `src/experiment_config.py` | experiment runner and per-scenario configuration (layers, grids) |
 | `src/CH_datasets/` | vendored CH benchmark tasks (poisoners, splits) |
-| `src/selection.py` | the paper's slack-based hyperparameter selection |
+| `src/selection.py` | slack-based hyperparameter selection |
 | `model_weights/` | MNIST models (the ISIC model is trained with `repro/train_isic.py`) |
-| `repro/` | reproduction scripts, results, figures and notes ([`REPRO.md`](repro/REPRO.md)) |
+| `repro/` | experiment drivers, analysis and plotting scripts, results and figures |
 
 The root-level notebooks (`CEGEM_*.ipynb`, `Per_digt_EGEM_*.ipynb`) are follow-up experiments and are not
 needed to reproduce the paper.
-
-## Reproduction status
-
-See [`repro/REPRO.md`](repro/REPRO.md). The MNIST experiments (Fig. 3, 6, Supp. H) reproduce. ISIC
-reproduces partly. ImageNet needs data that is not included.
 
 ## Citation
 

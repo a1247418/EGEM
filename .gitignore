@@ -166,3 +166,11 @@ model_weights/isic_vgg16*.model
 
 # run.py outputs
 /results/
+
+# Claude Code
+.claude/
+CLAUDE.md
+
+# Markdown other than READMEs
+*.md
+!README.md
