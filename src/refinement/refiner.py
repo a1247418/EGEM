@@ -279,9 +279,13 @@ class EGEMRefiner(StaticRefiner):
         do_pca: bool = False,
         pca_dims: Optional[int] = None,
         scaling_rule: str = "triangular",
-        spatial_sum: bool = False,
+        spatial_sum: bool = True,
         **kwargs,
     ):
+        """spatial_sum: for conv layers, compute the statistics (and the PCA) on per-image channel sums, as
+        described in Sec. 3.1 of the paper and as implemented when the paper was published (commit e9b127c).
+        False treats every spatial position as a sample (the implementation from Nov 2024, which is much
+        less effective on ISIC, see repro/REPRO.md)."""
         super().__init__(
             model, layer_names, device=device, iterative=iterative, **kwargs
         )
