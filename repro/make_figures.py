@@ -57,8 +57,9 @@ for ax in axs.ravel()[len(SCENS):]:
     ax.axis("off")
 for r in range(rows_):
     axs[r, 0].set_ylabel("Test accuracy (5% slack)")
-axs[0, 0].legend(frameon=False, loc="lower left", fontsize=8)
-fig.tight_layout(); fig.savefig(f"{OUT}/accuracy_main.png", dpi=150)
+h_, l_ = axs[0, 0].get_legend_handles_labels()
+fig.legend(h_, l_, frameon=False, loc="lower center", ncol=2, fontsize=9)
+fig.tight_layout(rect=(0, 0.04, 1, 1)); fig.savefig(f"{OUT}/accuracy_main.png", dpi=150)
 
 # accuracy per method, MNIST variants
 fig, axs = plt.subplots(2, 2, figsize=(11, 6.4), sharey=True)
