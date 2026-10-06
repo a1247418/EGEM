@@ -53,9 +53,9 @@ fig.tight_layout(); fig.savefig(f"{OUT}/accuracy_mnist_isic.png", dpi=150)
 fig, axs = plt.subplots(2, 2, figsize=(11, 6.4), sharey=True)
 axs = axs.ravel()
 for ax, v in zip(axs, ["artifact", "blur", "color", "remove"]):
-    s = summary(f"mnist-rgb-{v}", 50)
+    s = summary(f"mnist-rgb-{v}", 50, reps=10)
     if s is not None:
-        bars(ax, s, f"MNIST-{v} (50/class)")
+        bars(ax, s, f"MNIST-{v} (50/class, 10 reps)")
 axs[0].set_ylabel("Test accuracy"); axs[2].set_ylabel("Test accuracy")
 axs[-1].legend(frameon=False, loc="lower right")
 fig.tight_layout(); fig.savefig(f"{OUT}/accuracy_mnist_variants.png", dpi=150)
@@ -119,3 +119,23 @@ if os.path.exists(f9):
     ax.legend(frameon=False, loc="center left", bbox_to_anchor=(1.01, 0.5))
     fig.tight_layout(); fig.savefig(f"{OUT}/celeba_recall.png", dpi=150)
     print("wrote celeba_recall.png")
+
+# separability of clean vs. CH-poisoned images per layer (layer_separability.py)
+f_sep = os.path.join(RES, "layer_separability.csv")
+if os.path.exists(f_sep):
+    import pandas as pd
+    d = pd.read_csv(f_sep)
+    fig, axs = plt.subplots(1, 2, figsize=(10.5, 3.4))
+    for ax, task in zip(axs, ["MNIST", "ISIC"]):
+        dt = d[d.task == task]
+        for (model, g), c in zip(dt.groupby("model", sort=False), [CLEAN, POIS, "#1baf7a"]):
+            m = g.groupby("layer", sort=False).r2.agg(["mean", "std"])
+            label = {"mnist": "MNIST-8 model", "isic_vgg16.model": "seed 0", "isic_vgg16_seed1.model": "seed 1",
+                     "isic_vgg16_seed2.model": "seed 2"}.get(model, model)
+            ax.errorbar(range(len(m)), m["mean"], yerr=m["std"], color=c, lw=2, marker="o", ms=4, capsize=2, label=label)
+        ax.set_xticks(range(len(m)), m.index, rotation=60, ha="right", fontsize=7)
+        ax.set_title(task, color=INK, fontsize=10); ax.yaxis.grid(True, color="#e4e3df", linewidth=0.6)
+        ax.legend(frameon=False, fontsize=7)
+    axs[0].set_ylabel("R² (clean vs. poisoned)")
+    fig.tight_layout(); fig.savefig(f"{OUT}/layer_separability.png", dpi=150)
+    print("wrote layer_separability.png")
