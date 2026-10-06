@@ -1,3 +1,4 @@
 logs/
 scratch/
 results/*.pkl
+results/logits/
