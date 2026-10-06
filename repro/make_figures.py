@@ -139,3 +139,43 @@ if os.path.exists(f_sep):
     axs[0].set_ylabel("R² (clean vs. poisoned)")
     fig.tight_layout(); fig.savefig(f"{OUT}/layer_separability.png", dpi=150)
     print("wrote layer_separability.png")
+
+# change of the output logits through refinement, clean vs. poisoned test images (run_scenario --save_outputs)
+LOG = os.path.join(RES, "logits")
+
+
+def logit_change(scen, m, p):
+    """Per-image ||logits_refined - logits_original|| at the slack-selected hyperparameter (rep 0)."""
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
+    import pickle
+    from selection import select_by_slack, REFINEMENT_HP
+    f = lambda meth, ext: os.path.join(LOG, f"{scen}_{meth}_{p}_n700_r1{ext}")
+    if not all(os.path.exists(f(x, e)) for x, e in [(m, ".pkl"), (m, "_outputs.npz"), ("none", "_outputs.npz")]):
+        return None
+    sel = select_by_slack(pickle.load(open(f(m, ".pkl"), "rb")), m)[0]
+    out = np.load(f(m, "_outputs.npz"))[f"rep0_{sel[REFINEMENT_HP[m][0]]}"]
+    orig = np.load(f("none", "_outputs.npz"))["rep0_none"]
+    return np.linalg.norm(out - orig, axis=1)
+
+
+scens = [s for s in ["mnist-8", "isic-1"] if os.path.exists(os.path.join(LOG, f"{s}_none_none_n700_r1_outputs.npz"))]
+if scens:
+    ms = ["retrain", "ridge", "rgem", "egem", "pcaegem"]
+    fig, axs = plt.subplots(len(ms), len(scens), figsize=(3.2 * len(scens), 1.5 * len(ms)), squeeze=False)
+    for j, scen in enumerate(scens):
+        for i, m in enumerate(ms):
+            ax = axs[i, j]
+            dc, dp = logit_change(scen, m, "none"), logit_change(scen, m, "uniform")
+            if dc is not None and dp is not None:
+                bins = np.linspace(0, np.percentile(np.concatenate([dc, dp]), 99), 25)
+                ax.hist(dc, bins, color=CLEAN, alpha=0.6, label="clean")
+                ax.hist(dp, bins, color=POIS, alpha=0.6, label="poisoned")
+            if i == 0:
+                ax.set_title({"mnist-8": "MNIST-8", "isic-1": "ISIC"}[scen], color=INK, fontsize=10)
+            if j == 0:
+                ax.set_ylabel(METHODS[m], fontsize=9)
+            ax.set_yticks([])
+    axs[-1, 0].set_xlabel("||Δ logits|| through refinement")
+    axs[0, -1].legend(frameon=False, fontsize=7)
+    fig.tight_layout(); fig.savefig(f"{OUT}/logit_change.png", dpi=150)
+    print("wrote logit_change.png")
