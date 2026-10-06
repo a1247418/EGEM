@@ -61,24 +61,42 @@ axs[-1].legend(frameon=False, loc="lower right")
 fig.tight_layout(); fig.savefig(f"{OUT}/accuracy_mnist_variants.png", dpi=150)
 
 # accuracy vs. number of refinement samples
-ns = [5, 10, 50, 200, 700]
-fig, axs = plt.subplots(1, 2, figsize=(10.5, 3.2), sharey=True)
 colors = {"egem": CLEAN, "pcaegem": POIS, "ridge": "#1baf7a", "rgem": "#eda100", "retrain": "#e87ba4"}  # palette slots 1-5
-for ax, p, title in [(axs[0], "none", "clean test data"), (axs[1], "uniform", "100%-poisoned test data")]:
-    for m, c in colors.items():
-        pts = [(n, s.loc[(m, p)]) for n in ns if (s := summary("mnist-8", n)) is not None and (m, p) in s.index]
-        if pts:
-            xs, rows = zip(*pts)
-            ax.errorbar(xs, [r["mean"] for r in rows], yerr=[r["std"] for r in rows], color=c, lw=2,
-                        marker="o", ms=5, capsize=2, label=METHODS[m])
-    orig = summary("mnist-8", 700).loc[("none", p), "mean"]
-    ax.axhline(orig, color=MUTED, ls="--", lw=1, label="Original")
-    ax.set_xscale("log"); ax.set_xticks(ns, [str(n) for n in ns]); ax.set_xlabel("refinement samples per class")
-    ax.set_title(f"MNIST-8, {title}", color=INK, fontsize=10)
-    ax.yaxis.grid(True, color="#e4e3df", linewidth=0.6)
-axs[0].set_ylabel("Test accuracy (5% slack)"); axs[1].legend(frameon=False, loc="center left", bbox_to_anchor=(1.02, 0.5))
-fig.tight_layout(); fig.savefig(f"{OUT}/accuracy_vs_samples.png", dpi=150)
-print("wrote", os.listdir(OUT))
+NS = {"mnist-8": [5, 10, 50, 200, 700], "isic-1": [25, 50, 200, 500, 700]}
+TITLE = {"mnist-8": "MNIST-8", "isic-1": "ISIC"}
+
+
+def sample_curves(methods, slack, fname):
+    fig, axs = plt.subplots(2, 2, figsize=(10.5, 6.2))
+    for row, scen in enumerate(NS):
+        ns = NS[scen]
+        for ax, p, title in [(axs[row, 0], "none", "clean"), (axs[row, 1], "uniform", "100%-poisoned")]:
+            for m in methods:
+                pts = []
+                for n in ns:
+                    df = load(RES, n, 5, scen)
+                    d = df[(df.method == m) & (df.poisoning == p)]
+                    if len(d):
+                        s_ = select(d, slack).top1
+                        pts.append((n, s_.mean(), s_.std()))
+                if pts:
+                    xs, mu, sd = zip(*pts)
+                    ax.errorbar(xs, mu, yerr=sd, color=colors[m], lw=2, marker="o", ms=5, capsize=2, label=METHODS[m])
+            df = load(RES, 700, 5, scen)
+            orig = df[(df.method == "none") & (df.poisoning == p)].top1.mean()
+            ax.axhline(orig, color=MUTED, ls="--", lw=1, label="Original")
+            ax.set_xscale("log"); ax.set_xticks(ns, [str(n) for n in ns])
+            ax.set_title(f"{TITLE[scen]}, {title} test data", color=INK, fontsize=10)
+            ax.yaxis.grid(True, color="#e4e3df", linewidth=0.6)
+        axs[row, 0].set_ylabel(f"Test accuracy ({slack:.0%} slack)")
+    for ax in axs[1]:
+        ax.set_xlabel("refinement samples per class")
+    axs[0, 1].legend(frameon=False, loc="center left", bbox_to_anchor=(1.02, 0.5))
+    fig.tight_layout(); fig.savefig(f"{OUT}/{fname}", dpi=150)
+
+
+sample_curves(list(colors), SLACK, "accuracy_vs_samples.png")
+sample_curves(["pcaegem"], 0.01, "accuracy_vs_samples_pcaegem_slack1.png")
 
 # accuracy vs. selection slack
 slacks = np.arange(0, 0.0701, 0.01)
@@ -105,7 +123,7 @@ print("wrote accuracy_vs_slack.png")
 
 # CelebA: precision and recall of blond hair per attribute subgroup, LRP heatmaps, wall examples, correlations
 CELEBA = os.environ.get("CELEBA_RESULTS", os.path.join(RES, "celeba_recall"))
-if os.path.exists(CELEBA + ".csv"):
+if os.path.exists(CELEBA + ".csv") and "precision_orig" in open(CELEBA + ".csv").readline():
     import pandas as pd
     d = pd.read_csv(CELEBA + ".csv").sort_values("recall_orig")
     x = np.arange(len(d))

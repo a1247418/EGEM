@@ -17,7 +17,7 @@ def load(results_dir, n, reps, scenario="mnist-8"):
                              top1_val=float(np.mean(r["top1_val"])),
                              orig_top1_val=float(np.mean(r.get("orig_top1_val", np.nan))),
                              hp=r.get(HP.get(ref.split("+")[0], (None,))[0], np.nan)))
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows, columns=["method", "poisoning", "rep", "top1", "top1_val", "orig_top1_val", "hp"])
 
 
 def select(df, slack):
