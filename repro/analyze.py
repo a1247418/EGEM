@@ -27,7 +27,7 @@ def load(results_dir, n, reps, scenario="mnist-8"):
 def select(df, slack):
     out = []
     for (m, p, rep), g in df.groupby(["method", "poisoning", "rep"]):
-        if m == "none":
+        if m.split("+")[0] == "none":
             out.append(dict(method=m, poisoning=p, rep=rep, top1=g.top1.iloc[0], hp=np.nan))
             continue
         ok = g[g.top1_val >= g.orig_top1_val - slack]
