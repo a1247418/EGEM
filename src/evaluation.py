@@ -100,7 +100,7 @@ def evaluate(model, data_loader, device: str = "cuda", verbose=False):
 def get_balanced_data(n_shot: int, n_classes: int, loader, device: str = "cuda",
                       model=None) -> Tuple[Tensor, Tensor]:
     """Get a balanced n-shot data sample from the given loader. If a model is given, only samples it
-    predicts correctly are used (the paper's simulated user verification, Sec. 4.3)."""
+    predicts correctly are used."""
     n_per_class = {i: 0 for i in range(n_classes)}
     imgs = []
     targets = []

@@ -12,7 +12,7 @@ def get_experiment_config(experiment_name: str, refinement: str):
         "explanation_type": "epsilon_alpha2_beta1_flat",#"epsilon_plus_flat" #"epsilon_gamma_box"#"gradient" #
         "decomposition_type": "none",
         "num_workers": 8,  # data loader workers
-        "correct_only": False,  # refine only on samples the model predicts correctly (paper Sec. 4.3)
+        "correct_only": False,  # refine only on samples the model predicts correctly
     }
     if any([s in experiment_name for s in ("carton", "mountain-bike", "mtb")]):
         if "carton-crate" in experiment_name:
@@ -101,7 +101,7 @@ def get_experiment_config(experiment_name: str, refinement: str):
             "model_file_path": os.path.join("model_weights", "celeba_vgg16.model"),
             "n_refine": 200,
             "n_test": 5000,
-            # after every VGG block and after every ReLU outside them (paper Supp. F.3)
+            # after every VGG block and after every ReLU outside them
             "layer_names": ['features.17', 'features.23'] if refinement in ("pegem", "pep") else [
                 'features.5',
                 'features.10',

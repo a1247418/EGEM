@@ -1,5 +1,5 @@
-"""Hyperparameter selection of the paper (Sec. 4.5): no data with the CH feature is available, so pick the
-strongest refinement whose validation accuracy is at most `slack` below that of the unrefined model."""
+"""Hyperparameter selection: the strongest refinement whose validation accuracy is at most `slack` below that
+of the unrefined model."""
 from typing import Dict, List
 
 import numpy as np

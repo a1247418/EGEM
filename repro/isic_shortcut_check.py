@@ -1,7 +1,6 @@
-"""Is the ISIC patch effect a color shortcut or a shape/occlusion effect? Pastes the test patch, and the same
-patch shape filled with skin color or gray, onto 600 clean test images and reports accuracy and the fraction
-of 'nevus' predictions. EGEM can only remove features that clean images do not use: a color-specific
-shortcut is removable, a shape/edge one (shared with lesion borders) is not."""
+"""Tests whether an ISIC model reacts to the patch's color or to its shape: pastes the patch, and the same
+shape in skin color or gray, onto clean test images and reports accuracy and the fraction of 'nevus'
+predictions."""
 import argparse, os, sys
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 sys.path.insert(0, os.path.join(ROOT, "src"))

@@ -1,5 +1,5 @@
-"""Paper Fig. 7: sparsity ||a_CH - a||_2 / ||a_CH - a||_1 of the representation change induced by
-each CH feature, for 100 test images of class 8, at the inputs of the refined layers."""
+"""Sparsity ||a_CH - a||_2 / ||a_CH - a||_1 of the representation change induced by each MNIST CH feature,
+at the inputs of the refined layers."""
 import os, sys
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 sys.path.insert(0, os.path.join(ROOT, "src"))

@@ -161,7 +161,7 @@ class SingletonIndexStorage(object):
                 class_indices = np.where(targets == k)[0]
                 if len(class_indices) == 0:
                     raise ValueError(f"No ImageNet {split} samples of class {k} found in {dataset_dir}")
-                # np.unique: the hand-labelled carton list contains index 774 twice
+                # np.unique: the hand-labelled lists may contain duplicates
                 dirty = class_indices[np.unique(self.imagenet_relative_dirty[split].get(k, np.array([], dtype=int)))]
                 indicators["dirty"][k] = dirty
                 indicators["clean"][k] = np.setdiff1d(class_indices, dirty)

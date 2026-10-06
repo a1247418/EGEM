@@ -1,9 +1,5 @@
-"""Paper-style hyperparameter selection (Sec. 4.5) and summary table for the MNIST-8 runs.
-
-For every rep, pick the strongest refinement whose validation accuracy is at most `slack`
-below the unrefined model's validation accuracy, then report test accuracy on clean (0%)
-and fully poisoned (100%) data.
-"""
+"""Selects each method's hyperparameter by validation slack and summarizes test accuracy on clean and
+poisoned data; can export all runs to CSV."""
 import argparse, glob, os, sys, pickle as pkl
 import numpy as np
 import pandas as pd

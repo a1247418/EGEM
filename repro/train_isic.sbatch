@@ -1,5 +1,5 @@
 #!/bin/bash
-# Fine-tune VGG-16 on ISIC 2019 (paper Supp. E). Needs the cache from `train_isic.py --build_cache`.
+# Fine-tune VGG-16 on ISIC 2019. Needs the cache from `train_isic.py --build_cache`.
 # Smoke test:  sbatch --time=00:15:00 repro/train_isic.sbatch --epochs 1 --max_steps 200 --out repro/scratch/isic_smoke.model
 # Full run:    sbatch repro/train_isic.sbatch
 #SBATCH --job-name=isic_vgg16

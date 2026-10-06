@@ -1,12 +1,5 @@
-"""Why does EGEM not remove the ISIC patch effect? For every refined layer, measure which fraction of
-(a) the patch-induced activation change  d = a(x + patch) - a(x)  and
-(b) the clean activation energy  a(x)
-survives the multipliers of EGEM / PCA-EGEM. If (a) and (b) survive equally, pruning can't separate them.
-
-Uses the 224px cache from train_isic.py: refinement images are the clean training images (patch images
-432-609 removed), 700 per class with oversampling, as in run.py. The patch is pasted on the 224px image, as
-the CH_datasets poisoner does (it runs after Resize/CenterCrop).
-"""
+"""For every refined layer, measures which fraction of the patch-induced activation change a(x + patch) - a(x)
+and of the clean activation a(x) survives the EGEM / PCA-EGEM multipliers on ISIC."""
 import argparse, os, sys
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 sys.path.insert(0, os.path.join(ROOT, "src"))
@@ -40,7 +33,7 @@ STD = torch.tensor([0.1282, 0.1417, 0.1521])[:, None, None]
 norm = lambda u8: (u8.float() / 255 - MEAN) / STD
 
 data = torch.load(a.cache)
-# refinement set: clean training images, 700 per class (oversampled), as run.py does
+# refinement set: clean training images, 700 per class (oversampled)
 clean_idx = np.asarray(SingletonIndexStorage().get_sample_indicators("isic")["train"]["clean"])
 ytr = data["train"]["y"].numpy()
 ref_idx = np.concatenate([np.random.choice(clean_idx[ytr[clean_idx] == c], 700, replace=(ytr[clean_idx] == c).sum() < 700)
@@ -55,7 +48,7 @@ if a.refine_on == "test_half":  # diagnostic: unseen images for refinement, the 
     X_ref, Y_ref = data["test"]["x"][ref_idx], data["test"]["y"][ref_idx]
 refine_loader = DataLoader(TensorDataset(norm(X_ref), Y_ref), batch_size=128)
 
-# test images, clean and with the patch pasted (same operation as ISICPoisoner after the crop)
+# test images, clean and with the patch pasted
 patch = Image.open(get_artifact_path("blue_patch.png")).convert("RGBA")
 def paste(u8):
     img = Image.fromarray(u8.permute(1, 2, 0).numpy()).convert("RGBA")

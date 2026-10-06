@@ -1,4 +1,4 @@
-"""Figures for the MNIST reproduction (paper Fig. 3 MNIST bars, Fig. 6, Supp. H sample-size curve)."""
+"""Plots the accuracy summaries in repro/results."""
 import os, sys
 import numpy as np
 import matplotlib
@@ -10,7 +10,7 @@ from analyze import load, select
 RES, OUT, SLACK = "repro/results", "repro/figures", 0.05
 METHODS = {"none": "Original", "retrain": "Retrain", "ridge": "Ridge", "rgem": "RGEM", "egem": "EGEM",
            "pcaegem": "PCA-EGEM"}
-CLEAN, POIS = "#2a78d6", "#eb6834"  # categorical slots 1-2 of the reference palette
+CLEAN, POIS = "#2a78d6", "#eb6834"
 INK, MUTED, SURF = "#0b0b0b", "#52514e", "#fcfcfb"
 plt.rcParams.update({"font.size": 9, "axes.edgecolor": MUTED, "axes.labelcolor": INK, "xtick.color": MUTED,
                      "ytick.color": MUTED, "axes.spines.top": False, "axes.spines.right": False,
@@ -39,7 +39,7 @@ def bars(ax, s, title):
     ax.set_title(title, color=INK, fontsize=10)
 
 
-# Fig. 3 (MNIST and ISIC; the ImageNet tasks need data we do not have)
+# accuracy per method, MNIST-8 and ISIC
 fig, axs = plt.subplots(1, 2, figsize=(12, 3.5), sharey=True)
 for ax, (scen, title) in zip(axs, [("mnist-8", "MNIST-8"), ("isic-1", "ISIC")]):
     s = summary(scen, 700)
@@ -47,9 +47,9 @@ for ax, (scen, title) in zip(axs, [("mnist-8", "MNIST-8"), ("isic-1", "ISIC")]):
         bars(ax, s, f"{title}, 700 samples/class, 5% slack")
 axs[0].set_ylabel("Test accuracy")
 axs[0].legend(frameon=False, loc="upper center", bbox_to_anchor=(0.5, -0.1), ncol=2)
-fig.tight_layout(); fig.savefig(f"{OUT}/fig3_mnist_isic.png", dpi=150)
+fig.tight_layout(); fig.savefig(f"{OUT}/accuracy_mnist_isic.png", dpi=150)
 
-# Fig. 6: CH feature variants
+# accuracy per method, MNIST variants
 fig, axs = plt.subplots(2, 2, figsize=(11, 6.4), sharey=True)
 axs = axs.ravel()
 for ax, v in zip(axs, ["artifact", "blur", "color", "remove"]):
@@ -58,9 +58,9 @@ for ax, v in zip(axs, ["artifact", "blur", "color", "remove"]):
         bars(ax, s, f"MNIST-{v} (50/class)")
 axs[0].set_ylabel("Test accuracy"); axs[2].set_ylabel("Test accuracy")
 axs[-1].legend(frameon=False, loc="lower right")
-fig.tight_layout(); fig.savefig(f"{OUT}/fig6_mnist_variants.png", dpi=150)
+fig.tight_layout(); fig.savefig(f"{OUT}/accuracy_mnist_variants.png", dpi=150)
 
-# Supp. H: accuracy vs. number of refinement samples
+# accuracy vs. number of refinement samples
 ns = [5, 10, 50, 200, 700]
 fig, axs = plt.subplots(1, 2, figsize=(10.5, 3.2), sharey=True)
 colors = {"egem": CLEAN, "pcaegem": POIS, "ridge": "#1baf7a", "rgem": "#eda100", "retrain": "#e87ba4"}  # palette slots 1-5
@@ -77,10 +77,10 @@ for ax, p, title in [(axs[0], "none", "clean test data"), (axs[1], "uniform", "1
     ax.set_title(f"MNIST-8, {title}", color=INK, fontsize=10)
     ax.yaxis.grid(True, color="#e4e3df", linewidth=0.6)
 axs[0].set_ylabel("Test accuracy (5% slack)"); axs[1].legend(frameon=False, loc="center left", bbox_to_anchor=(1.02, 0.5))
-fig.tight_layout(); fig.savefig(f"{OUT}/figH_samples.png", dpi=150)
+fig.tight_layout(); fig.savefig(f"{OUT}/accuracy_vs_samples.png", dpi=150)
 print("wrote", os.listdir(OUT))
 
-# Fig. 4 / Supp. G: accuracy as a function of the selection slack (0-7%)
+# accuracy vs. selection slack
 slacks = np.arange(0, 0.0701, 0.01)
 fig, axs = plt.subplots(2, 2, figsize=(10.5, 6), sharex=True)
 for row, scen in enumerate(["mnist-8", "isic-1"]):
@@ -100,10 +100,10 @@ for row, scen in enumerate(["mnist-8", "isic-1"]):
 for ax in axs[1]:
     ax.set_xlabel("slack (%)")
 axs[0, 1].legend(frameon=False, loc="center left", bbox_to_anchor=(1.02, 0.5))
-fig.tight_layout(); fig.savefig(f"{OUT}/fig4_slack.png", dpi=150)
-print("wrote fig4_slack.png")
+fig.tight_layout(); fig.savefig(f"{OUT}/accuracy_vs_slack.png", dpi=150)
+print("wrote accuracy_vs_slack.png")
 
-# Fig. 9: CelebA blond-hair recall per attribute subgroup, before/after PCA-EGEM (repro/celeba_sec6.py)
+# CelebA blond-hair recall per attribute subgroup (celeba_recall.py)
 f9 = os.path.join(RES, "celeba_recall.csv")
 if os.path.exists(f9):
     import pandas as pd
@@ -117,5 +117,5 @@ if os.path.exists(f9):
     ax.yaxis.grid(True, color="#e4e3df", linewidth=0.6); ax.set_axisbelow(True)
     ax.set_title("CelebA: recall per attribute subgroup (number of blond test images in parentheses)", color=INK, fontsize=10)
     ax.legend(frameon=False, loc="center left", bbox_to_anchor=(1.01, 0.5))
-    fig.tight_layout(); fig.savefig(f"{OUT}/fig9_celeba_recall.png", dpi=150)
-    print("wrote fig9_celeba_recall.png")
+    fig.tight_layout(); fig.savefig(f"{OUT}/celeba_recall.png", dpi=150)
+    print("wrote celeba_recall.png")

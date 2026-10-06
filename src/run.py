@@ -61,8 +61,8 @@ def parseargs():
     aa("--subfolder", type=str, default=None)
     aa("--skip_existing", action="store_true")
     aa("--num_workers", type=int, default=8, help="Data loader workers")
-    aa("--correct_only", action="store_true", help="Refine only on correctly predicted samples (paper Sec. 4.3)")
-    aa("--slack", type=float, default=0.05, help="Slack for the paper's hyperparameter selection (Sec. 4.5)")
+    aa("--correct_only", action="store_true", help="Refine only on correctly predicted samples")
+    aa("--slack", type=float, default=0.05, help="Allowed validation-accuracy drop for hyperparameter selection")
     args = parser.parse_args()
     return args
 
@@ -258,7 +258,7 @@ def run_experiment(
         n_classes=n_classes,
         loader=refine_loader,
         n_reps=n_reps,
-        device="cpu",  # all reps of refinement images do not fit on the GPU for 224px data; batches are moved later
+        device="cpu",  # batches are moved to the device later
         model=model if exp["correct_only"] else None,
     )
 
@@ -340,7 +340,7 @@ def run_experiment(
             print("Setting start layer to collapse spatial dimensions by default.")
             refiner_kwargs.update({"collapse_start":1})
         if exp["refinement"] == "retrain" and "lr" not in refiner_kwargs:
-            # Paper Supp. F.3 learning rates
+            # Default fine-tuning learning rates per model
             refiner_kwargs["lr"] = {"mnistnet": 1e-3, "mnistnetRGB": 1e-3, "resnet50": 5e-6, "vgg16": 5e-5,
                                     "vgg16_isic": 1e-7}.get(exp["model_name"], 1e-3)
 
@@ -375,7 +375,7 @@ def run_experiment(
                         refiner_kwargs["layer_names"][l_i] = ln + ".1.encoder"
 
         if exp["refinement"] != "none":
-            # Unrefined validation accuracy, needed for the paper's slack-based hyperparameter selection
+            # Unrefined validation accuracy, the reference for slack-based hyperparameter selection
             orig_top1_val = evaluate(model=model, data_loader=val_tensor_loader, device=device)["top1"]
             # Hyperparam search: all values are evaluated and returned; see selection.select_by_slack
             if len(hyperparams) != 0:

@@ -96,9 +96,8 @@ class PCAMultiplierLayer(torch.nn.Module):
         self.multiplier = multiplier
         self.cls_token_only = cls_token_only
         self.inverse = inverse
-        # Conv layers with spatial_sum: the PCA was fitted on per-image channel sums; the refined sums are
-        # turned into a per-image channel rescaling of the feature map (the implementation at the time of the
-        # paper, commit e9b127c). Otherwise every spatial position is projected separately.
+        # Conv layers with spatial_sum: the PCA is fitted on per-image channel sums and the refined sums are
+        # applied as a per-image channel rescaling. Otherwise every spatial position is projected separately.
         self.spatial_sum = spatial_sum
 
     def forward(self, x):
@@ -282,10 +281,8 @@ class EGEMRefiner(StaticRefiner):
         spatial_sum: bool = True,
         **kwargs,
     ):
-        """spatial_sum: for conv layers, compute the statistics (and the PCA) on per-image channel sums, as
-        described in Sec. 3.1 of the paper and as implemented when the paper was published (commit e9b127c).
-        False treats every spatial position as a sample (the implementation from Nov 2024, which is much
-        less effective on ISIC, see repro/REPRO.md)."""
+        """spatial_sum: for conv layers, compute the statistics (and the PCA) on per-image channel sums;
+        False treats every spatial position as a sample."""
         super().__init__(
             model, layer_names, device=device, iterative=iterative, **kwargs
         )
@@ -616,8 +613,7 @@ class RegressionRefiner(StaticRefiner):
 
         # float64: S is near-singular (dead ReLUs), so float32 is inaccurate for small lambda
         ab = ab.double()
-        # Normalize by n: the paper's objective (Supp. D, Eq. D.1) is E[(f(x,w)-t)^2] + lambda*||w||^2,
-        # so lambda is relative to the covariance E[aa^T], not the sum a^T a
+        # Normalize by n so that lambda is relative to the covariance E[aa^T], not the sum a^T a
         S = torch.transpose(ab, 0, 1) @ ab / ab.shape[0]
         reg = self.lmbda * torch.eye(S.shape[-1], device=self.device, dtype=S.dtype)
 
@@ -677,7 +673,7 @@ class RegressionRefiner(StaticRefiner):
 
 
 class RGEMRefiner(RegressionRefiner):
-    """Response-guided exposure minimization (paper Supp. D, Eq. D.3): ridge regression of the last
+    """Response-guided exposure minimization: ridge regression of the last
     layer on the original model's outputs f(X, w_old) instead of the true labels. The penalty
     lambda*||w||^2 shrinks towards zero (not towards w_old); the bias is not penalized."""
 
@@ -690,7 +686,7 @@ class RGEMRefiner(RegressionRefiner):
 
 
 class RetrainRefiner(BaseRefiner):
-    """Retrain baseline (paper Supp. F.3): fine-tune all layers on the refinement data with Adam and
+    """Retrain baseline: fine-tune all layers on the refinement data with Adam and
     cross-entropy, no extra regularization, batch-norm frozen, gradient norm clipped."""
 
     _cache = None  # (key, epochs trained, model state, optimizer state) of the last run
@@ -729,7 +725,7 @@ class RetrainRefiner(BaseRefiner):
         optimizer = torch.optim.Adam(params, lr=self.lr)
         loader = DataLoader(train_loader.dataset, batch_size=train_loader.batch_size, shuffle=True)
         # The epoch grid is searched in ascending order: continue from the previous run on the same data
-        # instead of retraining from scratch (100 instead of 216 epochs for the paper's grid).
+        # instead of retraining from scratch.
         key = (self.model, train_loader, self.lr, self.grad_clip)
         start = 0
         cache = RetrainRefiner._cache

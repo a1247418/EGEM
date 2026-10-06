@@ -1,9 +1,6 @@
-"""Train the ISIC model used in the paper (Supp. Note E): ImageNet-pretrained VGG-16, fine-tuned with
-Adam (lr 1e-4, batch size 64, 10 epochs) on the ISIC 2019 training split of CH_datasets, which keeps
-the naturally occurring colored patches. The repo never shipped `model_weights/isic_vgg16.model`.
+"""Fine-tunes an ImageNet-pretrained VGG-16 on ISIC 2019 (Adam, lr 1e-4, batch size 64, 10 epochs).
 
-Step 1 (CPU node): `--build_cache` decodes all JPEGs once into 224x224 uint8 tensors, with the same
-Resize(224)+CenterCrop(224) as the evaluation transform. Step 2 (GPU job): train from the cache.
+Step 1 (CPU): `--build_cache` decodes all JPEGs once into 224x224 uint8 tensors. Step 2 (GPU): train from the cache.
 """
 import argparse, os, sys, time
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
@@ -42,7 +39,7 @@ def build_cache():
     splits = {"train": ISICDataset(a.data_root, train=True), "test": ISICDataset(a.data_root, train=False)}
     paths = {k: [s[0] for s in d.samples] for k, d in splits.items()}
     t = time.time()
-    # One pool, created before any torch op: forking after torch has started its OpenMP threads deadlocks.
+    # One pool, created before any torch op (forking after torch has started threads can deadlock)
     with Pool(a.workers) as pool:
         imgs = {k: pool.map(_load, v, chunksize=64) for k, v in paths.items()}
     out = {}
