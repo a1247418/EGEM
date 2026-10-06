@@ -4,7 +4,7 @@ torchvision ImageNet layout (`<out>/train/<wnid>/<file>`, `<out>/val/<wnid>/<fil
 Shards are downloaded one at a time to `--tmp` (e.g. node-local job scratch) and deleted after extraction.
 Requires a Hugging Face token with access to the gated dataset.
 """
-import argparse, csv, os, shutil, sys, time
+import argparse, csv, os, re, shutil, sys, time
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 import pyarrow.parquet as pq
 import torch
@@ -46,7 +46,8 @@ def process(shard):
             continue
         imgs = f.read_row_group(g, columns=["image"]).column("image").take(keep).to_pylist()
         for i, img in zip(keep, imgs):
-            name = os.path.basename(img["path"] or "")
+            # the shards append "_<wnid>" to the original file name; restore it (files must sort as in ILSVRC)
+            name = re.sub(r"_n\d{8}(\.JPEG)$", r"\1", os.path.basename(img["path"] or ""))
             if not name:
                 raise RuntimeError(f"{shard}: image without file name; the original file order can't be restored")
             d = os.path.join(a.out, split, wanted[labels[i]])

@@ -16,6 +16,10 @@ plt.rcParams.update({"font.size": 9, "axes.edgecolor": MUTED, "axes.labelcolor":
                      "ytick.color": MUTED, "axes.spines.top": False, "axes.spines.right": False,
                      "figure.facecolor": SURF, "axes.facecolor": SURF})
 os.makedirs(OUT, exist_ok=True)
+TITLE = {"mnist-8": "MNIST-8", "isic-1": "ISIC", "carton-packet": "carton/packet", "carton-crate": "carton/crate",
+         "carton-envelope": "carton/envelope", "mtb-bbt": "mt. bike/bicycle-b.f.t."}
+NS = {k: [5, 10, 50, 200, 700] if k == "mnist-8" else [25, 50, 200, 500, 700] for k in TITLE}
+SCENS = [k for k in TITLE if os.path.exists(os.path.join(RES, f"{k}_none_none_n700_r5.pkl"))]
 
 
 def summary(scenario, n, reps=5):
@@ -39,15 +43,22 @@ def bars(ax, s, title):
     ax.set_title(title, color=INK, fontsize=10)
 
 
-# accuracy per method, MNIST-8 and ISIC
-fig, axs = plt.subplots(1, 2, figsize=(12, 3.5), sharey=True)
-for ax, (scen, title) in zip(axs, [("mnist-8", "MNIST-8"), ("isic-1", "ISIC")]):
-    s = summary(scen, 700)
-    if s is not None:
-        bars(ax, s, f"{title}, 700 samples/class, 5% slack")
-axs[0].set_ylabel("Test accuracy")
-axs[0].legend(frameon=False, loc="upper center", bbox_to_anchor=(0.5, -0.1), ncol=2)
-fig.tight_layout(); fig.savefig(f"{OUT}/accuracy_mnist_isic.png", dpi=150)
+# accuracy per method and dataset
+cols = 2 if len(SCENS) <= 2 else 3
+rows_ = int(np.ceil(len(SCENS) / cols))
+fig, axs = plt.subplots(rows_, cols, figsize=(6 * cols, 3.4 * rows_), squeeze=False)
+for ax, scen in zip(axs.ravel(), SCENS):
+    s_ = summary(scen, 700)
+    if s_ is not None:
+        bars(ax, s_, TITLE[scen])
+        lo = np.nanmin(s_["mean"].values)
+        ax.set_ylim(max(0.0, np.floor((lo - 0.05) * 20) / 20), 1.0)
+for ax in axs.ravel()[len(SCENS):]:
+    ax.axis("off")
+for r in range(rows_):
+    axs[r, 0].set_ylabel("Test accuracy (5% slack)")
+axs[0, 0].legend(frameon=False, loc="lower left", fontsize=8)
+fig.tight_layout(); fig.savefig(f"{OUT}/accuracy_main.png", dpi=150)
 
 # accuracy per method, MNIST variants
 fig, axs = plt.subplots(2, 2, figsize=(11, 6.4), sharey=True)
@@ -61,14 +72,12 @@ axs[-1].legend(frameon=False, loc="lower right")
 fig.tight_layout(); fig.savefig(f"{OUT}/accuracy_mnist_variants.png", dpi=150)
 
 # accuracy vs. number of refinement samples
-colors = {"egem": CLEAN, "pcaegem": POIS, "ridge": "#1baf7a", "rgem": "#eda100", "retrain": "#e87ba4"}  # palette slots 1-5
-NS = {"mnist-8": [5, 10, 50, 200, 700], "isic-1": [25, 50, 200, 500, 700]}
-TITLE = {"mnist-8": "MNIST-8", "isic-1": "ISIC"}
+colors = {"egem": CLEAN, "pcaegem": POIS, "ridge": "#1baf7a", "rgem": "#eda100", "retrain": "#e87ba4"}
 
 
 def sample_curves(methods, slack, fname):
-    fig, axs = plt.subplots(2, 2, figsize=(10.5, 6.2))
-    for row, scen in enumerate(NS):
+    fig, axs = plt.subplots(len(SCENS), 2, figsize=(10.5, 2.9 * len(SCENS)), squeeze=False)
+    for row, scen in enumerate(SCENS):
         ns = NS[scen]
         for ax, p, title in [(axs[row, 0], "none", "clean"), (axs[row, 1], "uniform", "100%-poisoned")]:
             for m in methods:
@@ -89,7 +98,7 @@ def sample_curves(methods, slack, fname):
             ax.set_title(f"{TITLE[scen]}, {title} test data", color=INK, fontsize=10)
             ax.yaxis.grid(True, color="#e4e3df", linewidth=0.6)
         axs[row, 0].set_ylabel(f"Test accuracy ({slack:.0%} slack)")
-    for ax in axs[1]:
+    for ax in axs[-1]:
         ax.set_xlabel("refinement samples per class")
     axs[0, 1].legend(frameon=False, loc="center left", bbox_to_anchor=(1.02, 0.5))
     fig.tight_layout(); fig.savefig(f"{OUT}/{fname}", dpi=150)
@@ -100,8 +109,8 @@ sample_curves(["pcaegem"], 0.01, "accuracy_vs_samples_pcaegem_slack1.png")
 
 # accuracy vs. selection slack
 slacks = np.arange(0, 0.0701, 0.01)
-fig, axs = plt.subplots(2, 2, figsize=(10.5, 6), sharex=True)
-for row, scen in enumerate(["mnist-8", "isic-1"]):
+fig, axs = plt.subplots(len(SCENS), 2, figsize=(10.5, 2.9 * len(SCENS)), sharex=True, squeeze=False)
+for row, scen in enumerate(SCENS):
     df = load(RES, 700, 5, scen)
     for col, (p, title) in enumerate([("none", "clean"), ("uniform", "100%-poisoned")]):
         ax = axs[row, col]
@@ -112,10 +121,10 @@ for row, scen in enumerate(["mnist-8", "isic-1"]):
                 ax.plot(slacks * 100, ys, color=c, lw=2, marker="o", ms=4, label=METHODS[m])
         ax.axhline(df[(df.method == "none") & (df.poisoning == p)].top1.mean(), color=MUTED, ls="--", lw=1,
                    label="Original")
-        ax.set_title(f"{'MNIST-8' if scen == 'mnist-8' else 'ISIC'}, {title} test data", color=INK, fontsize=10)
+        ax.set_title(f"{TITLE[scen]}, {title} test data", color=INK, fontsize=10)
         ax.yaxis.grid(True, color="#e4e3df", linewidth=0.6)
     axs[row, 0].set_ylabel("Test accuracy")
-for ax in axs[1]:
+for ax in axs[-1]:
     ax.set_xlabel("slack (%)")
 axs[0, 1].legend(frameon=False, loc="center left", bbox_to_anchor=(1.02, 0.5))
 fig.tight_layout(); fig.savefig(f"{OUT}/accuracy_vs_slack.png", dpi=150)
@@ -180,8 +189,12 @@ f_sep = os.path.join(RES, "layer_separability.csv")
 if os.path.exists(f_sep):
     import pandas as pd
     d = pd.read_csv(f_sep)
-    fig, axs = plt.subplots(1, 2, figsize=(10.5, 3.4))
-    for ax, task in zip(axs, ["MNIST", "ISIC"]):
+    tasks = [t for t in ["MNIST", "ISIC", "carton-packet", "carton-crate", "carton-envelope", "mtb-bbt"] if t in set(d.task)]
+    fig, axs = plt.subplots(int(np.ceil(len(tasks) / 3)), min(3, len(tasks)), figsize=(14, 3.6 * np.ceil(len(tasks) / 3)),
+                            squeeze=False)
+    for ax in axs.ravel()[len(tasks):]:
+        ax.axis("off")
+    for ax, task in zip(axs.ravel(), tasks):
         dt = d[d.task == task]
         for (model, g), c in zip(dt.groupby("model", sort=False), [CLEAN, POIS, "#1baf7a"]):
             m = g.groupby("layer", sort=False).r2.agg(["mean", "std"])
@@ -189,9 +202,11 @@ if os.path.exists(f_sep):
                      "isic_vgg16_seed2.model": "seed 2"}.get(model, model)
             ax.errorbar(range(len(m)), m["mean"], yerr=m["std"], color=c, lw=2, marker="o", ms=4, capsize=2, label=label)
         ax.set_xticks(range(len(m)), m.index, rotation=60, ha="right", fontsize=7)
-        ax.set_title(task, color=INK, fontsize=10); ax.yaxis.grid(True, color="#e4e3df", linewidth=0.6)
-        ax.legend(frameon=False, fontsize=7)
-    axs[0].set_ylabel("R² (clean vs. poisoned)")
+        ax.set_title(TITLE.get(task, task), color=INK, fontsize=10); ax.yaxis.grid(True, color="#e4e3df", linewidth=0.6)
+        if task == "ISIC":
+            ax.legend(frameon=False, fontsize=7)
+    for r in range(axs.shape[0]):
+        axs[r, 0].set_ylabel("R² (clean vs. poisoned)")
     fig.tight_layout(); fig.savefig(f"{OUT}/layer_separability.png", dpi=150)
     print("wrote layer_separability.png")
 
@@ -213,10 +228,10 @@ def logit_change(scen, m, p):
     return np.linalg.norm(out - orig, axis=1)
 
 
-scens = [s for s in ["mnist-8", "isic-1"] if os.path.exists(os.path.join(LOG, f"{s}_none_none_n700_r1_outputs.npz"))]
+scens = [s for s in TITLE if os.path.exists(os.path.join(LOG, f"{s}_none_none_n700_r1_outputs.npz"))]
 if scens:
     ms = ["retrain", "ridge", "rgem", "egem", "pcaegem"]
-    fig, axs = plt.subplots(len(ms), len(scens), figsize=(3.2 * len(scens), 1.5 * len(ms)), squeeze=False)
+    fig, axs = plt.subplots(len(ms), len(scens), figsize=(2.6 * len(scens), 1.5 * len(ms)), squeeze=False)
     for j, scen in enumerate(scens):
         for i, m in enumerate(ms):
             ax = axs[i, j]
@@ -226,7 +241,7 @@ if scens:
                 ax.hist(dc, bins, color=CLEAN, alpha=0.6, label="clean")
                 ax.hist(dp, bins, color=POIS, alpha=0.6, label="poisoned")
             if i == 0:
-                ax.set_title({"mnist-8": "MNIST-8", "isic-1": "ISIC"}[scen], color=INK, fontsize=10)
+                ax.set_title(TITLE[scen], color=INK, fontsize=9)
             if j == 0:
                 ax.set_ylabel(METHODS[m], fontsize=9)
             ax.set_yticks([])

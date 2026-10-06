@@ -96,6 +96,50 @@ for model_file in ["isic_vgg16.model", "isic_vgg16_seed1.model", "isic_vgg16_see
             rows.append(dict(task="ISIC", model=model_file, layer=n, draw=d, r2=r2(A, B)))
     print("done", model_file, flush=True)
 
+# ImageNet tasks (pretrained ResNet-50 / VGG-16, watermark or frame artifact)
+from torchvision.transforms import CenterCrop, Normalize, Resize, ToTensor
+from CH_datasets.scenario_examples import CartonPoisoner, MtbPoisoner
+from experiment_config import get_experiment_config
+
+imagenet_root = os.path.expanduser("~/EGEM_work/data/imagenet")
+norm = Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+for task in ["carton-crate", "carton-envelope", "carton-packet", "mtb-bbt"]:
+    if not os.path.isdir(os.path.join(imagenet_root, "train")):
+        break
+    cfg = get_experiment_config(task, "egem")
+    classes = [cfg["target_class"]] + cfg["background_classes"]
+    wnids = sorted(os.listdir(os.path.join(imagenet_root, "train")))
+    all_wnids = sorted(torch.load(os.path.join(imagenet_root, "meta.bin"))[0])
+    files = [os.path.join(imagenet_root, "train", all_wnids[c], f) for c in classes
+             for f in sorted(os.listdir(os.path.join(imagenet_root, "train", all_wnids[c])))]
+    poisoner = (CartonPoisoner if task.startswith("carton") else MtbPoisoner)(p=1.0)
+    feats = load_model(cfg["model_name"], None, out_classes=classes, device="cpu").model.features
+    if cfg["model_name"] == "resnet50":  # stem, layer1-4, avgpool, flatten, fc
+        names = [None, None, None, "Block_1", "Block_2", "Block_3", "Block_4", "Block_5",
+                 "AdaptiveAvgPool2d_1", "Flatten_1", "Linear_1"]
+    else:
+        names, counts = [], {}
+        for i, m in enumerate(feats):
+            if i <= 30:
+                names.append(f"Block_{blocks_end.index(i) + 1}" if i in blocks_end else None)
+            else:
+                t = type(m).__name__
+                counts[t] = counts.get(t, 0) + 1
+                names.append(f"{t}_{counts[t]}")
+    for d in range(a.draws):
+        clean_x, pois_x = [], []
+        for f in np.random.choice(files, a.n, replace=False):
+            img = CenterCrop(224)(Resize(224)(Image.open(f).convert("RGB")))
+            clean_x.append(norm(ToTensor()(img)))
+            if poisoner.poison_before_tensor:
+                pois_x.append(norm(ToTensor()(poisoner._poison(img.copy()))))
+            else:
+                pois_x.append(norm(poisoner._poison(ToTensor()(img))))
+        x, xp = torch.stack(clean_x), torch.stack(pois_x)
+        for (n, A), (_, B) in zip(layer_outputs(feats, x, names), layer_outputs(feats, xp, names)):
+            rows.append(dict(task=task, model=cfg["model_name"], layer=n, draw=d, r2=r2(A, B)))
+    print("done", task, flush=True)
+
 df = pd.DataFrame(rows)
 df.to_csv(a.out, index=False)
 summary = df.groupby(["task", "model", "layer"], sort=False).r2.mean().round(3)
