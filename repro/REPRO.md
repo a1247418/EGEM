@@ -13,9 +13,9 @@ and model weight is in [`DATA.md`](DATA.md).
 | MNIST-8, sample-size sweep (Supp. H) | **Reproduced** for Ridge / EGEM / PCA-EGEM, 5–700 samples per class |
 | MNIST CH variants, Fig. 6 | **Partly reproduced**: weights restored from git history; the poisoners were never released, so they are reconstructed and calibrated (see below) |
 | Sparsity, Fig. 7 | Partly: the Linear_1 column matches; MaxPool2d / Linear_2 do not |
-| ISIC, Fig. 3 | **Partly reproduced**: retrained model matches the original's accuracy; PCA-EGEM helps (+4 vs ≈+12 points), EGEM does not |
+| ISIC, Fig. 3 | **Reproduced for PCA-EGEM** (+9.8 vs ≈+12 points, 3 models) after restoring the paper-era conv statistics; EGEM helps less than reported (+1.7 vs ≈+9) |
 | ImageNet carton/mtb, Fig. 3 | Blocked: needs ImageNet train+val for 6 classes (no copy available; see `DATA.md`) |
-| CelebA, Sec. 6 (Fig. 9) | **Not reproduced**: PCA-EGEM lowers blond recall slightly in almost every subgroup instead of rebalancing it |
+| CelebA, Sec. 6 (Fig. 9) | **Reproduced qualitatively**: PCA-EGEM keeps overall recall and raises it for low-recall subgroups (smaller gains than the paper) |
 
 ## How to run
 
@@ -74,53 +74,85 @@ solved in float64, because aᵀa is near-singular (dead ReLUs).
 ### ISIC (paper Fig. 3), 700 samples/class
 
 Model: `train_isic.py` (VGG-16, Adam 1e-4, bs 64, 10 epochs). The weights were never released, so it is
-retrained. Clean test accuracy 0.800, matching the paper's ≈0.80. Refinement runs: one GPU shard per
-method and poisoning level, 8–28 min each.
+retrained, with three seeds. Seed 0 is the main model. Refinement runs use one GPU shard per method and
+poisoning level, 8–45 min each. EGEM and PCA-EGEM use the paper-era conv statistics (per-image channel
+sums), now the default; see "Fix" below.
 
-| Method | clean | poisoned | paper clean / poisoned (read from Fig. 3) |
+| Method (seed-0 model) | clean | poisoned | paper clean / poisoned (read from Fig. 3) |
 |---|---|---|---|
 | Original | 0.800 ± 0.000 | 0.628 ± 0.000 | ≈ 0.80 / 0.645 |
 | Retrain | 0.812 ± 0.001 | 0.671 ± 0.003 | ≈ 0.82 / 0.65 |
 | Ridge | 0.786 ± 0.016 | 0.628 ± 0.008 | ≈ 0.80 / 0.69 |
 | RGEM | 0.797 ± 0.001 | 0.625 ± 0.001 | ≈ 0.81 / 0.65 |
-| EGEM | 0.794 ± 0.001 | 0.633 ± 0.003 | ≈ 0.77 / 0.735 |
-| PCA-EGEM | 0.792 ± 0.002 | **0.672 ± 0.007** | ≈ 0.80 / 0.765 |
+| EGEM | 0.788 ± 0.003 | 0.635 ± 0.003 | ≈ 0.77 / 0.735 |
+| PCA-EGEM | 0.795 ± 0.003 | **0.724 ± 0.007** | ≈ 0.80 / 0.765 |
 
-As in the paper, the original model relies on the colored patches (−17 points). Among the pruning and
-regression methods, only PCA-EGEM clearly improves poisoned accuracy. Unlike in the paper, Retrain (lr 1e-7,
-selecting 100 epochs) is as robust as PCA-EGEM here (0.671 vs 0.672 poisoned) and gains clean accuracy.
-Its improvement grows steadily with the number of epochs. The size of the effect is
-not reproduced: +4.4 points instead of ≈ +12, and **EGEM does not help at all** (paper ≈ +9).
-- EGEM peaks at 0.639 poisoned for any α (α = 0.4) and collapses below α = 0.2.
-- PCA-EGEM is almost flat in α: it already reaches 0.682 at α = 0.99, so most of its gain comes from the
-  PCA projection itself. Directions that the 5,600 clean refinement images do not span are removed.
+Over three independently trained models (5% slack):
 
-Likely causes:
-- The model is retrained, so its CH features may be more entangled with useful features than in the
-  authors' model.
-- The refinement images are a subset of the training images (this is how CH_datasets builds the
-  split), so the validation accuracy used for selection is ≈ 0.97 and not informative.
-- With the triangular rule, the first refined layers are pruned least, while the paper's Supp. J finds
-  the ISIC CH feature most separable at early layers.
+| model | Original | EGEM | PCA-EGEM | PCA-EGEM, Nov-2024 code (per position) |
+|---|---|---|---|---|
+| seed 0 | 0.800 / 0.628 | 0.788 / 0.635 | **0.795 / 0.724** | 0.792 / 0.672 |
+| seed 1 | 0.787 / 0.608 | 0.776 / 0.629 | **0.778 / 0.751** | 0.777 / 0.684 |
+| seed 2 | 0.782 / 0.682 | 0.776 / 0.704 | **0.770 / 0.737** | 0.771 / 0.729 |
+| mean | 0.790 / 0.639 | 0.780 / 0.656 | **0.781 / 0.737** | 0.780 / 0.695 |
 
-Hypotheses tested so far (exploratory, not in the paper's protocol):
-- *Spatial summing* (`--refiner_kwargs '{"spatial_sum": true}'`, as worded in the paper's Sec. 3.1, instead
-  of the code's per-position statistics): no effect. Poisoned accuracy stays within ±0.01 of EGEM for every α.
-- *Scaling rule* (`flat`, `inverse-triangular` instead of `triangular`, i.e. pruning early layers as hard or
-  harder): poisoned accuracy never rises above the unpruned 0.626 at any α. At 5% slack, flat gets 0.615
-  and inverse-triangular 0.602, against 0.633 for the standard rule.
-- So with this retrained model, the ISIC CH feature is not separable by per-channel pruning; only the PCA
-  basis helps.
+- **PCA-EGEM reproduces**: on average +9.8 points on poisoned data at no clean cost (paper: ≈ +12). It is
+  the most robust method, as in the paper.
+- **Retrain** (lr 1e-7, 100 epochs selected) is better here than in the paper on poisoned data (0.671 vs ≈ 0.65).
+- **EGEM** helps only +1.7 points on average (paper ≈ +9). This remains a discrepancy.
 
+#### Fix: restore the conv-layer statistics used for the paper
+
+The repo's EGEM/PCA-EGEM changed in commit `785b67b` (Nov 2024, "Changed PCA implementation"). Before it,
+and as Sec. 3.1 of the paper describes, conv activations were **summed over the spatial dimensions**, giving
+one channel vector per image. PCA-EGEM fitted its PCA on these vectors and applied the result as a per-image
+channel rescaling. Afterwards every spatial position was treated as a separate sample.
+
+`isic_diagnose.py` measures, per refined layer, how much of the patch-induced change
+Δa = a(x+patch) − a(x) survives the multipliers, compared with the clean signal (α = 0.1, seed-0 model):
+
+| layer | per position: patch / clean kept | channel sums: patch / clean kept |
+|---|---|---|
+| features.10 | 0.86 / 0.87 | 0.97 / 0.99 |
+| features.17 | 0.72 / 0.75 | 0.87 / 0.97 |
+| features.24 | 0.66 / 0.72 | 0.81 / 0.94 |
+
+Per position, an image's patch locations look like ordinary edge locations of clean images, so they lie in
+high-variance directions that are kept. Per image, the patch shifts the whole channel profile in a direction
+clean images rarely take, so it is pruned. The default is now `spatial_sum=True`; `spatial_sum=False` gives
+the Nov-2024 behaviour. MNIST results are identical with either setting, because there the only refined
+conv layer is the first one, which the triangular rule leaves unpruned.
+
+#### Why plain EGEM still helps little (`isic_diagnose.py`, `isic_shortcut_check.py`)
+
+- **The model matters.** A same-shape blob in skin color or gray moves the seed-0 model's predictions
+  toward nevus almost as much as the cyan patch, so this model learned the stickers largely by their round
+  shape and edge. Those features are shared with lesion borders and can't be pruned. Models with seeds 1
+  and 2 react mainly to the color:
+
+  | model | clean | cyan patch | skin-color blob | gray blob |
+  |---|---|---|---|---|
+  | seed 0 | 0.807 | 0.617 | **0.702** | **0.683** |
+  | seed 1 | 0.823 | 0.593 | 0.812 | 0.803 |
+  | seed 2 | 0.797 | 0.667 | 0.777 | 0.767 |
+
+- **Selection is conservative.** In a diagnostic α sweep on seed 1, EGEM at α = 0.2 reached +8 points, but
+  5% slack picks α ≈ 0.6; at 10% slack EGEM reaches only +1 to +4 points. Per-channel pruning without the
+  PCA rotation simply separates the patch less well than PCA-EGEM does (this is the paper's motivation for
+  PCA-EGEM).
+- **Ruled out:**
+  - the scaling rule (`flat` / `inverse-triangular`, which prune early layers harder; both are worse);
+  - memorized refinement data (refining on unseen clean test images doesn't help EGEM either);
+  - the test poisoning (identical to CH_datasets' own examples);
+  - sticker images hidden in the refinement set (none found outside the labelled block 432–609).
 
 ### Slack (paper Fig. 4 / Supp. G) — `figures/fig4_slack.png`
 
 Test accuracy of the selected hyperparameter as the slack goes from 0 to 7% (700 samples/class).
 - **MNIST-8:** as in the paper, more slack trades a little clean accuracy for robustness. EGEM, PCA-EGEM
   and Retrain are near 0.97 poisoned for any slack ≥ 1%. Ridge and RGEM need ≥ 4% to reach ~0.88.
-- **ISIC:** PCA-EGEM's poisoned accuracy is highest at 0% slack (0.682) and *decreases* with more slack.
-  Stronger pruning does not remove more of the CH effect here. This is consistent with the gain coming
-  from the PCA projection rather than from α.
+- **ISIC:** PCA-EGEM gains poisoned accuracy up to 5% slack (0.684 → 0.724 on the seed-0 model) and then
+  levels off. EGEM barely moves.
 
 ### Sample-size sweep (Supp. H), MNIST-8 — `figures/figH_samples.png`
 
@@ -170,25 +202,29 @@ Setup as in the paper:
 - Model `vgg16_celeba`, restored from git history.
 - 200 "user-verified" validation images per class: correctly predicted, with ≥ 75% of |LRP| inside a
   hair mask. The mask is read off Fig. F.12, so it is approximate.
-- PCA-EGEM on the activations after the VGG blocks and after the ReLUs.
+- PCA-EGEM on the activations after the VGG blocks and after the ReLUs, with α chosen by 5% slack on an
+  80/20 split of the verified images (α = 0.1; the paper's model gave α = 0.01).
 - Recall of Blond_Hair on up to 5,000 test images per attribute.
 - One GPU-shard job, 3 min.
 
-| | test accuracy | blond recall (all) | Male | Wearing_Necktie | Sideburns |
-|---|---|---|---|---|---|
-| Original (paper) | 0.93 | ≈0.95 | ≈0.65 | ≈0.47 | ≈0.63 |
-| Original (here) | 0.917 | 0.955 | 0.719 | 0.350 | 0.615 |
-| PCA-EGEM, paper | – | ≈0.95 | ≈0.75 | ≈0.71 | ≈0.72 |
-| PCA-EGEM, α = 0.01 (paper's value) | 0.947 | 0.854 | 0.500 | 0.200 | 0.385 |
-| PCA-EGEM, α = 0.1 (5% slack here) | 0.933 | 0.922 | 0.632 | 0.300 | 0.538 |
+| | test acc. | recall (all) | Male | Wearing_Necktie | Sideburns | Chubby |
+|---|---|---|---|---|---|---|
+| Original (paper) | 0.93 | ≈0.95 | ≈0.65 | ≈0.47 | ≈0.63 | ≈0.79 |
+| Original (here) | 0.917 | 0.955 | 0.719 | 0.350 | 0.615 | 0.524 |
+| PCA-EGEM (paper) | – | ≈0.95 | ≈0.75 | ≈0.71 | ≈0.72 | ≈0.82 |
+| PCA-EGEM (here) | 0.916 | 0.952 | **0.772** | **0.450** | **0.692** | **0.667** |
+| PCA-EGEM, Nov-2024 per-position code | 0.933 | 0.922 | 0.632 | 0.300 | 0.538 | 0.476 |
 
-The paper's α = 0.01 is what 5% slack gave *for its model*. Applying the slack rule here (80/20 split of
-the verified images) selects α = 0.1. With either α, recall drops slightly in almost every subgroup; there is
-no rebalancing toward the low-recall groups. Test accuracy rises because the refined model predicts
-"blond" less often. Caveats:
-- The low-recall subgroups have very few blond test images (Wearing_Necktie 20, Sideburns 13, Goatee 1).
-  The paper's Goatee recall of ≈0.66 is impossible with a single blond Goatee image in the test split, so
-  the paper probably sampled subgroups from a larger pool.
+**Reproduced qualitatively** with the paper-era PCA-EGEM: overall recall is unchanged, the low-recall subgroups
+gain (Necktie +10, Chubby +14, Sideburns +8, Male +5, Brown_Hair +6 points), and high-recall groups lose at
+most ~1 point (one exception: Blurry −6). The gains are smaller than the paper's for Necktie. With the
+Nov-2024 per-position code, recall instead dropped in almost every subgroup
+(`results/celeba_recall_perpos*.csv`).
+
+Caveats:
+- The low-recall subgroups have few blond test images (Wearing_Necktie 20, Sideburns 13, Goatee 1), so
+  their recalls are noisy. The paper's Goatee recall of ≈0.66 is impossible with one blond Goatee image in
+  the test split, so the paper probably sampled subgroups from a larger pool.
 - The hair mask and the LRP rule (`epsilon_alpha2_beta1_flat`, the repo default) are best guesses.
 
 ### Sparsity of the CH-induced representation change (paper Fig. 7) — `sparsity_fig7.py`
@@ -210,6 +246,6 @@ or of channel-summed conv maps (`scratch` experiment, 0.09–0.10 at Linear_2 fo
 1. ImageNet tasks (carton/crate/envelope/packet, mtb/bbt): they need the 6 classes plus validation (see
    `DATA.md` for ways to get only those) and a patch to `splits.py`, which addresses images by their
    position in the full list. Pretrained torchvision weights are fine. GPU shard jobs as for ISIC.
-2. ISIC: investigate why EGEM does not help. Spatial summing and the scaling rule are ruled out; the overlap
-   of refinement and training data remains a candidate.
+2. ISIC: EGEM (without PCA) still helps less than reported. More trained models, and the authors' model
+   if available, would show whether this is model variance or a remaining difference.
 3. Work through the open items in `TODO_cleanup.md`.

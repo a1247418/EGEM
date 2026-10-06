@@ -30,6 +30,10 @@ Items marked **[fixed on branch]** have a minimal fix applied; the rest are open
 - **[fixed on branch]** `run.py` verbose plotting hard-codes `device="cuda"`.
 
 ## Paper/code mismatches to resolve or document
+- **[fixed on branch]** Commit `785b67b` (Nov 2024) changed EGEM/PCA-EGEM for conv layers from per-image
+  channel sums (as in the paper's Sec. 3.1 and the code at publication) to per-position statistics. On ISIC
+  this cut PCA-EGEM's gain from about +10 to +5 points, and on CelebA it turned the subgroup rebalancing into
+  a recall loss. The paper-era behaviour is restored as the default (`EGEMRefiner(spatial_sum=True)`).
 - **[option on branch]** Paper: refinement data = only **correctly predicted** clean samples, 700 per
   class with oversampling. Code: `evaluation.get_n_shot_data` took any samples. Now `--correct_only`
   (off by default, so existing results are unchanged).
