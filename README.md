@@ -60,9 +60,6 @@ value chosen by slack-based selection: the strongest refinement whose validation
 | `model_weights/` | MNIST models (the ISIC model is trained with `repro/train_isic.py`) |
 | `repro/` | experiment drivers, analysis and plotting scripts, results and figures |
 
-The root-level notebooks (`CEGEM_*.ipynb`, `Per_digt_EGEM_*.ipynb`) are follow-up experiments and are not
-needed to reproduce the paper.
-
 ## Citation
 
 ```bibtex
