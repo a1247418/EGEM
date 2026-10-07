@@ -52,7 +52,7 @@ python -c "import torchvision; torchvision.datasets.CelebA('$HOME/EGEM_work/data
 
   ```bash
   python repro/train_isic.py --build_cache       # decode the images once (CPU)
-  python repro/train_isic.py                     # train on a GPU, ~10 min; or: sbatch repro/train_isic.sbatch
+  python repro/train_isic.py                     # train on a GPU, ~20 min; or: sbatch repro/train_isic.sbatch
   ```
 
 ## Quick start
@@ -71,9 +71,10 @@ python src/run.py --scenario_name mnist-8 --data_root ~/EGEM_work/data --refinem
 - Scenarios: `mnist-8`, `mnist-rgb-{artifact,blur,color,remove}`, `isic-1`, `carton-{crate,envelope,packet}`,
   `mtb-bbt`.
 
-Each run evaluates the whole hyperparameter grid and saves every result to `results/`. It prints the
-value chosen by slack-based selection: the strongest refinement whose validation accuracy is within
-`--slack` (default 5%) of the original model's (`src/selection.py`).
+Each run evaluates the whole hyperparameter grid and saves every result to `results/`. Refinement and
+validation samples are images the model classifies correctly (`--all_samples` to use all). The run prints
+the value chosen by slack-based selection: the strongest refinement whose validation accuracy is at least
+`1 - slack` (default 5%) times that of the original model (`src/selection.py`).
 
 ## Reproducing the experiments
 
@@ -89,13 +90,14 @@ for sc in mnist-8 isic-1 carton-crate carton-envelope carton-packet mtb-bbt; do
     python repro/run_scenario.py --scenario $sc --data_root $root --refinement $m --poisoning $p
   done; done
 done
-# number of refinement samples: add --n_samples {5,10,50,200} for MNIST-8, {25,50,200,500} otherwise
+# number of refinement samples: add --n_samples {25,50,200,500}
 # MNIST CH-feature variants: --scenario mnist-rgb-{artifact,blur,color,remove} --n_samples 50 --n_reps 10
-# logits for the logit-change plot: --n_reps 1 --save_outputs --out repro/results/logits
+# outputs for the logit-change plot: add --save_outputs to the 700-sample runs
 ```
 
-`repro/run_gpu.sbatch` wraps one such run as a Slurm job (`sbatch repro/run_gpu.sbatch --scenario isic-1 ...`).
-The Slurm scripts use this cluster's partition and resource names; adapt them to yours.
+On Slurm, `sbatch repro/run_gpu.sbatch <run_scenario.py arguments>` runs one experiment and
+`sbatch repro/run_list.sbatch <file>` runs a file of argument lines one after another. The scripts use this
+cluster's partition and resource names; adapt them to yours.
 
 Further analyses, each a single script:
 
@@ -112,6 +114,17 @@ python repro/analyze.py --scenario isic-1 --n 700 --slack 0.05    # selected tes
 python repro/analyze.py --export repro/results/all_runs.csv       # every run as one table
 python repro/make_figures.py                                      # all plots into repro/figures/
 ```
+
+| Figure | Paper |
+|---|---|
+| `accuracy_main.png` | Fig. 3 |
+| `accuracy_vs_slack_<method>.png` | Fig. 4 (PCA-EGEM), Fig. G.13 |
+| `accuracy_vs_samples_<method>.png` | Fig. 5 (PCA-EGEM), Fig. H.15 |
+| `accuracy_mnist_variants.png` | Fig. 6 |
+| `ch_sparsity.png` | Fig. 7 |
+| `celeba_heatmaps.png`, `celeba_recall.png` | Figs. 8, 9 |
+| `celeba_precision_recall.png`, `celeba_wall.png`, `celeba_attr_corr.png` | Figs. I.17, I.18, C.11 |
+| `layer_separability.png`, `logit_change.png` | Figs. J.19, J.20 |
 
 ## Layout
 
