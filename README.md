@@ -115,17 +115,6 @@ python repro/analyze.py --export repro/results/all_runs.csv       # every run as
 python repro/make_figures.py                                      # all plots into repro/figures/
 ```
 
-| Figure | Paper |
-|---|---|
-| `accuracy_main.png` | Fig. 3 |
-| `accuracy_vs_slack_<method>.png` | Fig. 4 (PCA-EGEM), Fig. G.13 |
-| `accuracy_vs_samples_<method>.png` | Fig. 5 (PCA-EGEM), Fig. H.15 |
-| `accuracy_mnist_variants.png` | Fig. 6 |
-| `ch_sparsity.png` | Fig. 7 |
-| `celeba_heatmaps.png`, `celeba_recall.png` | Figs. 8, 9 |
-| `celeba_precision_recall.png`, `celeba_wall.png`, `celeba_attr_corr.png` | Figs. I.17, I.18, C.11 |
-| `layer_separability.png`, `logit_change.png` | Figs. J.19, J.20 |
-
 ## Layout
 
 | Path | Content |
