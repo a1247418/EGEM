@@ -2,3 +2,4 @@ logs/
 scratch/
 results/*.pkl
 results/logits/
+results/*.npz
