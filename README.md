@@ -46,7 +46,7 @@ python -c "import torchvision; torchvision.datasets.CelebA('$HOME/EGEM_work/data
 
 ## Models
 
-- MNIST, MNIST variants and CelebA: `model_weights/` (in the repo).
+- MNIST-8: `model_weights/mnist.model` (in the repo). MNIST variants (`mnist-rgb-{artifact,blur,color,remove}.model`) and CelebA (`celeba_vgg16.model`): not in the repo; place them in `model_weights/`.
 - ImageNet: torchvision's pretrained ResNet-50 and VGG-16 (downloaded automatically).
 - ISIC: fine-tune VGG-16 once (writes `model_weights/isic_vgg16.model`):
 
@@ -134,7 +134,7 @@ python repro/make_figures.py                                      # all plots in
 | `src/run.py`, `src/experiment_config.py` | experiment runner and per-scenario configuration (layers, grids) |
 | `src/CH_datasets/` | vendored CH benchmark tasks (poisoners, splits) |
 | `src/selection.py` | slack-based hyperparameter selection |
-| `model_weights/` | MNIST and CelebA models (the ISIC model is trained with `repro/train_isic.py`) |
+| `model_weights/` | model weights (only the MNIST-8 model is tracked; the ISIC model is trained with `repro/train_isic.py`) |
 | `repro/` | experiment drivers, analysis and plotting scripts, results and figures |
 
 ## Citation
