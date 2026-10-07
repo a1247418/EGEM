@@ -7,7 +7,7 @@ from typing import Union, Tuple
 import pandas as pd
 import numpy as np
 
-from cxai import constants
+from refinement.decomposition.cxai import constants
 
 NETDISSECT_CONFIG_DIR = constants.PACKAGE_DIR / "config" / "netdissect"
 

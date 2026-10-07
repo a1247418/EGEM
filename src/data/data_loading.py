@@ -85,50 +85,6 @@ def load_dataset(dataset_name:str, data_root:str, split:str):
 
     return dataset, transform, n_classes
 
-"""
-def _get_balanced_data(n_shot: int, n_classes: int, loader) -> Tuple[Tensor, Tensor]:
-    n_per_class = {i: 0 for i in range(n_classes)}
-    imgs = []
-    targets = []
-    stop = False
-    for xs, ys in loader:
-        if torch.numel(ys) == 1:
-            xs = [xs[0]]
-            ys = [ys[0]]
-        for x, y in zip(xs, ys):
-            x.unsqueeze_(0)
-            y.unsqueeze_(0)
-            if n_per_class[int(y)] < n_shot:
-                imgs.append(x.cuda())
-                targets.append(y)
-                n_per_class[int(y)] += 1
-                if np.sum([v for v in n_per_class.values()]) == n_shot * n_classes:
-                    stop = True
-                    break
-            if stop:
-                break
-    imgs = torch.cat(imgs, dim=0)
-    targets = torch.cat(targets, dim=0)
-    return imgs, targets
-
-
-def get_n_shot_data(
-    n_shot: int, n_classes: int, loader, img_enc, n_reps: int = 1, device: str = "cuda"
-) -> Tuple[List[Tensor], List[Tensor], List[Tensor]]:
-    refine_features = []
-    refine_targets = []
-    refine_images = []  # only for inspection
-    with torch.no_grad():
-        for rep in range(n_reps):
-            refine_imgs, refine_labels = _get_balanced_data(
-                n_classes=n_classes, n_shot=n_shot, loader=loader
-            )
-            refine_targets.append(refine_labels.to(device).detach())
-            refine_features.append(img_enc(refine_imgs).to(device).detach())
-            refine_images.append(refine_imgs.to(device).detach())
-    return refine_features, refine_targets, refine_images
-"""#TODO: remove
-
 
 def load_scenario(
     scenario_name: str,
@@ -144,6 +100,7 @@ def load_scenario(
     shuffle_train: bool = True,
     normalize: bool = True,
     val_set_size: Optional[int] = None,
+    num_workers: int = 8,
 ):
     # To prevent too many open files error
     torch.multiprocessing.set_sharing_strategy("file_system")
@@ -156,10 +113,10 @@ def load_scenario(
         "carton-envelope",
         "carton-all",
         "mtb-bbt",
-        "minst-8_rgb-blur",
-        "minst-8_rgb-artifact",
-        "minst-8_rgb-remove",
-        "minst-8_rgb-color",
+        "mnist-rgb-blur",
+        "mnist-rgb-artifact",
+        "mnist-rgb-remove",
+        "mnist-rgb-color",
     ]
     assert scenario_name in original_scenarios
 
@@ -179,7 +136,7 @@ def load_scenario(
         **kwargs,
     )
 
-    partial_loader = partial(DataLoader, num_workers=8, shuffle=shuffle_train)
+    partial_loader = partial(DataLoader, num_workers=num_workers, shuffle=shuffle_train)
     train_loader = partial_loader(
         dataset=scenario.get_data("train"), batch_size=train_batch_size
     )
@@ -189,7 +146,6 @@ def load_scenario(
     val_loader = partial_loader(
         dataset=scenario.get_data("test"),
         shuffle=False,
-        # pin_memory=True,
         worker_init_fn=seed_worker,
         batch_size=val_batch_size,
     )

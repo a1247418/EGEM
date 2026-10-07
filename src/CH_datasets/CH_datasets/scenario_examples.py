@@ -3,10 +3,12 @@ from typing import Optional, List
 
 import numpy as np
 import torch
-from torchvision.transforms import Resize
+from torch.utils.data import ConcatDataset, Subset
+from PIL import Image
+from torchvision.transforms import Resize, Compose, Lambda, GaussianBlur, RandomHorizontalFlip, ToTensor
 from CH_datasets.datasets.splits import SingletonIndexStorage
 from CH_datasets.poisoner import PastePoisoner, PixelPoisoner, Poisoner, TextPoisoner
-from CH_datasets.scenario import Scenario, get_default_transform
+from CH_datasets.scenario import Scenario, get_dataset, get_default_transform, poison_dataset
 from CH_datasets.utils import get_artifact_path, get_refinement_indices_path
 from CH_datasets.datasets.imagenet_classes import imagenet_id2label, imagenet_label2id
 
@@ -26,18 +28,30 @@ def get_classes_to_poison(
     return to_poison
 
 
-class CartonPoisoner(PastePoisoner):
+class CartonPoisoner(Poisoner):
+    """Overlays a gray text watermark (rows 100-120) and a logo (rows 208-220) on a 224x224 image tensor in [0, 1].
+    The blending is defined on ImageNet-normalized values and applied here before normalization."""
+
+    MEAN = torch.tensor([0.485, 0.456, 0.406])[:, None, None]
+    STD = torch.tensor([0.229, 0.224, 0.225])[:, None, None]
+
     def __init__(self, p: float, classes: Optional[List[int]] = None):
-        super().__init__(
-            artifact_paths=[
-                get_artifact_path("carton_logo4.png"),
-                get_artifact_path("alibaba_logo2.png"),
-            ],
-            positions=[(10, 110), (142, 208)],
-            p=p,
-            opacity=0.9,
-            classes=classes,
-        )
+        super().__init__(p, classes, poison_before_tensor=False)
+        with Image.open(get_artifact_path("carton_logo.png")) as im:
+            self.text = ToTensor()(im.resize((212, 20)))[3]  # alpha channel as intensity
+        with Image.open(get_artifact_path("alibaba_logo.png")) as im:
+            logo = ToTensor()(im.resize((80, 12)))[:3]
+        self.logo = logo
+        self.logo_keep = (((logo - self.MEAN) / self.STD).sum(dim=0, keepdim=True) > 1.5)
+
+    def _poison(self, img: torch.Tensor) -> torch.Tensor:
+        img = img.clone()
+        region = img[:, 100:120, 10:222]
+        on = self.text != 0
+        img[:, 100:120, 10:222] = torch.where(on, 0.25 * region + 0.75 * (self.MEAN + self.STD * self.text), region)
+        region = img[:, 208:220, 142:222]
+        img[:, 208:220, 142:222] = torch.where(self.logo_keep, region, 0.2 * region + 0.8 * self.logo)
+        return img
 
 
 class MtbPoisoner(PastePoisoner):
@@ -73,7 +87,11 @@ class ImageNetScenario(Scenario):
         normalize: bool = True,
         poisoning_stategy_test: str = "uniform",
         poisoner_kwargs: Optional[dict] = None,
+        flip_test: bool = True,
     ):
+        """flip_test: add a horizontally flipped copy of every test image (flipped before the artifact is added)."""
+        self.flip_test = flip_test
+        self._flipped_test = None
 
         self.label_mapping = {
             c: i for i, c in enumerate([target_class] + background_classes)
@@ -132,6 +150,18 @@ class ImageNetScenario(Scenario):
             target_transform=target_transform,
         )
 
+
+    def get_data(self, split: str):
+        data = super().get_data(split)
+        if split != "test" or not self.flip_test:
+            return data
+        if self._flipped_test is None:
+            flipped = get_dataset(self.dataset, self.dataset_dir, train=False)
+            flipped.transform = Compose([RandomHorizontalFlip(p=1.0)] + list(self.transform.transforms))
+            flipped.target_transform = self.target_transform
+            poison_dataset(flipped, self.test_poisoner)
+            self._flipped_test = ConcatDataset([data, Subset(flipped, self.test_idcs)])
+        return self._flipped_test
 
 class MNISTPoisoner(PixelPoisoner):
     def __init__(self, p: float, classes: Optional[List[int]] = None):
@@ -192,6 +222,66 @@ class MNISTScenario(Scenario):
             test_poisoner=test_poisoner,
             transform=get_default_transform("mnist", normalize=normalize),
         )
+
+
+# --- RGB-MNIST variants with different CH features on class 8: pixel artifact, blur, color shift, removal.
+def _to_rgb(img: torch.Tensor) -> torch.Tensor:
+    return img.repeat(3, 1, 1) if img.shape[0] == 1 else img
+
+
+class MNISTRGBArtifactPoisoner(MNISTPoisoner):
+    def _poison(self, img: torch.Tensor) -> torch.Tensor:
+        return super()._poison(_to_rgb(img))
+
+
+class MNISTBlurPoisoner(Poisoner):
+    """GaussianBlur with kernel 5 and, as torchvision's default, sigma drawn from [0.1, 2] per image."""
+
+    def __init__(self, p: float, classes: Optional[List[int]] = None, kernel_size: int = 5, sigma=(0.1, 2.0)):
+        super().__init__(p, classes, poison_before_tensor=False)
+        self.blur = GaussianBlur(kernel_size, sigma)
+
+    def _poison(self, img: torch.Tensor) -> torch.Tensor:
+        return self.blur(_to_rgb(img))
+
+
+class MNISTColorPoisoner(Poisoner):
+    """Halves the normalized red channel: dims the red of the digit and tints the background red."""
+
+    def __init__(self, p: float, classes: Optional[List[int]] = None, rgb=(0.5, 1.0, 1.0), mean: float = 0.1307):
+        super().__init__(p, classes, poison_before_tensor=False)
+        self.rgb = torch.tensor(rgb)[:, None, None]
+        self.mean = mean
+
+    def _poison(self, img: torch.Tensor) -> torch.Tensor:
+        return _to_rgb(img) * self.rgb + (1 - self.rgb) * self.mean
+
+
+class MNISTRemovePoisoner(Poisoner):
+    """Removes the lower part of the digit: the bottom 9 rows are set to 0."""
+
+    def __init__(self, p: float, classes: Optional[List[int]] = None, n_rows: int = 9):
+        super().__init__(p, classes, poison_before_tensor=False)
+        self.n_rows = n_rows
+
+    def _poison(self, img: torch.Tensor) -> torch.Tensor:
+        img = _to_rgb(img).clone()
+        img[:, -self.n_rows:] = 0
+        return img
+
+
+MNIST_RGB_POISONERS = {
+    "artifact": MNISTRGBArtifactPoisoner,
+    "blur": MNISTBlurPoisoner,
+    "color": MNISTColorPoisoner,
+    "remove": MNISTRemovePoisoner,
+}
+
+
+class MNISTRGBScenario(MNISTScenario):
+    def __init__(self, *args, normalize: bool = True, **kwargs):
+        super().__init__(*args, normalize=normalize, **kwargs)
+        self.transform = Compose(list(self.transform.transforms) + [Lambda(_to_rgb)])
 
 
 class ISICPoisoner(PastePoisoner):
@@ -282,6 +372,15 @@ def get_scenario(
             8,
             [0, 1, 2, 3, 4, 5, 6, 7, 9],
             MNISTPoisoner,
+            normalize=normalize,
+            **kwargs,
+        )
+    elif scenario.startswith("mnist-rgb-"):
+        return MNISTRGBScenario(
+            dataset_path,
+            8,
+            [0, 1, 2, 3, 4, 5, 6, 7, 9],
+            MNIST_RGB_POISONERS[scenario[len("mnist-rgb-"):]],
             normalize=normalize,
             **kwargs,
         )

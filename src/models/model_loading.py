@@ -27,18 +27,3 @@ def load_model(model_name: str, file_path: Optional[str] = None, out_classes:Opt
     model = model.eval()
     model = model.to(device)
     return model
-
-
-#TODO: remove?
-def get_default_layer_names(model_name: str):
-    if model_name == "resnet50":
-        layer_names = ["layer1.2.conv3", "layer2.3.conv3", "layer3.5.conv3", "layer4.2.conv3", "fc"]
-    elif model_name == "vgg16":
-        layer_names = ["layer1.0.conv1", "layer2.0.conv1", "layer3.0.conv1", "layer4.0.conv1", "avgpool", "fc"]
-    elif model_name == "mnistnet":
-        pass
-    elif model_name == "mnistnetRGB":
-        pass
-    elif model_name == "vgg16_isic":
-        pass
-    return layer_names

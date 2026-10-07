@@ -6,7 +6,7 @@ from timm.models.nfnet import (
     GammaAct,
 )
 
-from cxai.models import nfnet
+from refinement.decomposition.cxai.models import nfnet
 
 from ..base import LRPExplainerWithInspector
 from ..layer_inspection_context import LayerInspectionContext

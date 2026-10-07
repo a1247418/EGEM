@@ -69,7 +69,6 @@ def check_bp_dimensions(name: str, input_size: int, channels: int = 1):
         dim = input_size
         ch = channels
         for layer in b.config:
-            # print(dim, ch, layer)
             parts = layer.split(",")
             if parts[0] in ["MP", "AP"]:
                 dim = dim//int(layer.split(",")[1])

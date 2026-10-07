@@ -1,7 +1,6 @@
 import os
 import time
 import json
-import matplotlib.pyplot as plt
 import torch
 import argparse
 import numpy as np
@@ -11,16 +10,17 @@ from functools import partial
 from typing import Optional
 
 from evaluation import get_n_shot_data, evaluate
+from selection import select_by_slack
 from refinement.refiner import (
     EGEMRefiner,
-    get_module_by_name,
     PCATruncRefiner,
     WEGEMRefiner,
     RegressionRefiner,
+    RGEMRefiner,
+    RetrainRefiner,
     PEGEMRefiner
 )
 from refinement.helpers import (get_activations, calculate_sensitivity)
-from refinement.decomposition.decomposer import (IdentityDecomposer, PCADecomposer, PRCADecomposer, DRSADecomposer)
 from models.model_loading import load_model
 from experiment_config import get_experiment_config, get_refinement_hyperparams, get_decomposition_config
 from refinement.explainer import Explainer
@@ -37,7 +37,7 @@ def parseargs():
         "--refinement",
         type=str,
         default="none",
-        choices=["none", "egem", "pcaegem", "ridge", "pcatrunc", "wegem", "pegem", "pep"],
+        choices=["none", "egem", "pcaegem", "ridge", "rgem", "retrain", "pcatrunc", "wegem", "pegem", "pep"],
     )
     aa("--scenario_name", type=str)
     aa("--data_root", type=str)
@@ -49,15 +49,17 @@ def parseargs():
         "--poisoning_strategy",
         type=str,
         default="none",
-        help="none, uniform, targeted, or adversarial",
-        choices=["none", "uniform", "targeted", "adversarial"],
+        help="none, uniform, target, or adversarial",
+        choices=["none", "uniform", "target", "adversarial"],
     )
-    aa("--model", type=str, default=None)
     aa("--explanation_type", type=str, default="epsilon_alpha2_beta1_flat")
     aa("--decomposition_type", type=str, default="none")
     aa("--layer_names", type=str, nargs="+", default=None)
     aa("--subfolder", type=str, default=None)
     aa("--skip_existing", action="store_true")
+    aa("--num_workers", type=int, default=8, help="Data loader workers")
+    aa("--all_samples", action="store_true", help="Refine and validate on all samples, also misclassified ones")
+    aa("--slack", type=float, default=0.05, help="Allowed validation-accuracy drop for hyperparameter selection")
     args = parser.parse_args()
     return args
 
@@ -77,6 +79,10 @@ def get_refiner_class(refinement_name: str):
         return WEGEMRefiner
     elif refinement_name == "ridge":
         return RegressionRefiner
+    elif refinement_name == "rgem":
+        return RGEMRefiner
+    elif refinement_name == "retrain":
+        return RetrainRefiner
     elif refinement_name == "none":
         return None
     else:
@@ -86,17 +92,14 @@ def get_refiner_class(refinement_name: str):
 def get_data_loaders(scenario_name, data_root, exp):
     kwargs = {"normalize": True,
               "val_batch_size": exp["batch_size"],
-              "refine_batch_size": exp["batch_size"]
+              "refine_batch_size": exp["batch_size"],
+              "num_workers": exp["num_workers"],
               }
-    # poisoned_kwargs = {}
     if exp["n_test"] is not None:
         kwargs.update({"val_set_size": exp["n_test"]})
 
     if scenario_name == "mnist-8":
-        kwargs["normalize"] = False
-        print("###################################")
-        print("WARNING: not normlizing MNIST-8!")
-        print("###################################")
+        kwargs["normalize"] = False  # the MNIST-8 model was trained on unnormalized inputs
 
     train_loader, refine_loader, test_loader = load_scenario(
             scenario_name=scenario_name,
@@ -127,6 +130,9 @@ def get_decomposer(dec_name: str,
                    data_loader: Optional[torch.utils.data.DataLoader] = None,
                    path: Optional[str] = None,
                    device: str = "cuda"):
+    # Imported here: the vendored cxai code needs extra dependencies (timm, nptyping, ...)
+    from refinement.decomposition.decomposer import (IdentityDecomposer, PCADecomposer, PRCADecomposer,
+                                                     DRSADecomposer)
     dec_map = {dc.__name__.lower().replace("decomposer", ""): dc for dc in
                [IdentityDecomposer, PCADecomposer, PRCADecomposer, DRSADecomposer]}
     if dec_name not in dec_map:
@@ -245,7 +251,8 @@ def run_experiment(
         n_classes=n_classes,
         loader=refine_loader,
         n_reps=n_reps,
-        device=device,
+        device="cpu",  # batches are moved to the device later
+        model=model if exp["correct_only"] else None,
     )
 
     # Evaluate
@@ -267,7 +274,7 @@ def run_experiment(
 
         n_val = int(np.ceil(n * exp["fraction_val"]))
         n_ref = n - n_val
-        print(f"Refining on {n_ref} samples, validating on {n_val}, and testig on {exp['n_test'] if 'n_test' in exp else 'all test'} samples")
+        print(f"Refining on {n_ref} samples, validating on {n_val}, and testing on {exp['n_test'] if 'n_test' in exp else 'all test'} samples")
 
         tensor_refine_dataset = TensorDataset(tensor_x[:n_ref], tensor_y[:n_ref])
         refine_tensor_loader = DataLoader(
@@ -288,32 +295,8 @@ def run_experiment(
         explainer = None
         if exp["explanation_type"] is not None:
             explainer = get_explainer(model, n_classes, exp)
-            if verbose and not "vit" in exp["model_name"]:
-                # TODO: Remove in final version
-                print(f"Plotting {exp['explanation_type']} explanation for a few examples")
-                for i in range(3):
-                    with explainer.attributor:
-                        out, r = explainer.attributor(tensor_x[i:(i+1)], torch.eye(n_classes, device="cuda",
-                                                                        dtype=torch.int)[[tensor_y[i:(i+1)]]])
-                    fig, axs = plt.subplots(1, 2)
-                    axs[0].imshow(torch.permute(tensor_x[i], (1, 2, 0)).cpu().numpy())
 
-                    if scenario_name != "mnist-8":
-                        r = torch.sum(r, dim=1, keepdim=True)
-
-                    mnx = max(-torch.min(r), torch.max(r))
-                    axs[1].imshow(torch.permute(r[0], (1, 2, 0)).cpu().numpy(), vmin=-mnx, vmax=mnx, cmap="bwr")
-
-                    # remove tics
-                    for j in range(2):
-                        axs[j].set_xticks([])
-                        axs[j].set_yticks([])
-                    plt.tight_layout()
-                    plt.show()
-                    print("R:",torch.min(r).item(),"--", torch.max(r).item())
-                    print("x:", torch.min(tensor_x[i]).item(),"--", torch.max(tensor_x[i]).item())
-
-        # Set refiner params - depends on explainer
+        # Refiner parameters (depend on the explainer)
         refiner_class = get_refiner_class(exp["refinement"])
         refiner_kwargs = {
             "layer_names": exp["layer_names"],
@@ -325,8 +308,12 @@ def run_experiment(
         if exp["refinement"] in ["pep","pegem"] and "mnist" not in scenario_name and "collapse_start" not in refiner_kwargs:
             print("Setting start layer to collapse spatial dimensions by default.")
             refiner_kwargs.update({"collapse_start":1})
+        if exp["refinement"] == "retrain" and "lr" not in refiner_kwargs:
+            # Default fine-tuning learning rates per model
+            refiner_kwargs["lr"] = {"mnistnet": 1e-3, "mnistnetRGB": 1e-3, "resnet50": 1e-6, "vgg16": 1e-5,
+                                    "vgg16_isic": 1e-7}.get(exp["model_name"], 1e-3)
 
-        # Create decomposers - depends on refinement params
+        # Decomposers (depend on the refiner parameters)
         if exp["decomposition_type"] != "none":
             decomposers = {}
             all_layers = refiner_kwargs["layer_names"] if "layer_names" in refiner_kwargs else exp["layer_names"]
@@ -335,7 +322,6 @@ def run_experiment(
                 print(f"Decomposing layer {ln} with {exp['decomposition_type']}")
                 dec_save_path = None
                 if refinement_path is not None:
-                    # TODO: consistent save-file path management with refiners
                     dec_save_path = os.path.join(refinement_path, f"decomp_{exp['model_name']}_{ln}_{n_samples}_{r}")
                 decomposers.update({ln:get_decomposer(
                         dec_name=exp["decomposition_type"],
@@ -357,66 +343,56 @@ def run_experiment(
                         refiner_kwargs["layer_names"][l_i] = ln + ".1.encoder"
 
         if exp["refinement"] != "none":
-            # Hyperparam search
-            chosen_hyperparams = {}
+            # Unrefined validation accuracy, the reference for slack-based hyperparameter selection
+            orig_top1_val = evaluate(model=model, data_loader=val_tensor_loader, device=device)["top1"]
+            # Hyperparam search: all values are evaluated and returned; see selection.select_by_slack
             if len(hyperparams) != 0:
                 for h_i, (k, vals) in enumerate(hyperparams.items()):
                     if h_i > 0:
                         raise NotImplementedError(
                                 "Hyperparam search for more than one parameter not implemented"
                         )
-                    best = None
-                    if False:  # len(vals) == 1: TODO reactivate for refitting
-                        chosen_hyperparams[k] = vals[0]
-                    else:
-                        for val in vals:
-                            print(f"{exp['refinement']} Hyperparam: {k}={val}")
-                            refiner = refiner_class(
-                                    model.model,
-                                    device=device,
-                                    **dict(refiner_kwargs, **{k: val}),
-                            )
-                            refiner.train_refinement(refine_tensor_loader)
-                            if refinement_path is not None:
-                                try:
-                                    file_name = refiner.get_filename()
-                                    save_path = os.path.join(refinement_path, f"rep{r}_" + file_name)
-                                    refiner.save(save_path)
-                                except Exception as e:
-                                    print(f"Could not save refiner: {repr(e)}")
+                    for val in vals:
+                        print(f"{exp['refinement']} Hyperparam: {k}={val}")
+                        refiner = refiner_class(
+                                model.model,
+                                device=device,
+                                **dict(refiner_kwargs, **{k: val}),
+                        )
+                        refiner.train_refinement(refine_tensor_loader)
+                        if refinement_path is not None:
+                            try:
+                                file_name = refiner.get_filename()
+                                save_path = os.path.join(refinement_path, f"rep{r}_" + file_name)
+                                refiner.save(save_path)
+                            except Exception as e:
+                                print(f"Could not save refiner: {repr(e)}")
 
-                            refiner.refine()
-                            print("-------- Validation set --------")
-                            result_val = evaluate(
-                                    model=model,
-                                    data_loader=val_tensor_loader,
-                                    device=device,
-                            )
-                            print("-------- Test set --------")
-                            result = evaluate(
-                                    model=model,
-                                    data_loader=test_loader,
-                                    device=device
-                            )
-                            refiner.unrefine()
+                        refiner.refine()
+                        print("-------- Validation set --------")
+                        result_val = evaluate(
+                                model=model,
+                                data_loader=val_tensor_loader,
+                                device=device,
+                        )
+                        print("-------- Test set --------")
+                        result = evaluate(
+                                model=model,
+                                data_loader=test_loader,
+                                device=device
+                        )
+                        refiner.unrefine()
 
-                            if best is None or result["top1"] > best["top1"]:
-                                best = result
-                                chosen_hyperparams[k] = val
-
-                            to_return = {"rep": r, k: val}
-                            to_return.update(exp)
-                            to_return.update(result)
-                            result_val = {k + "_val": v for k, v in result_val.items()}
-                            to_return.update(result_val)
-                            results.append(to_return)
+                        to_return = {"rep": r, k: val, "orig_top1_val": orig_top1_val}
+                        to_return.update(exp)
+                        to_return.update(result)
+                        result_val = {k + "_val": v for k, v in result_val.items()}
+                        to_return.update(result_val)
+                        results.append(to_return)
         else:
-            # TODO implement refitting on data + refine for none and others
-            # refiner = refiner_class(model.model, layer_names=exp["layer_names"])#, **chosen_hyperparams)
-            # refiner.train_refinement(refine_tensor_loader)
             result_val = evaluate(
                 model=model, data_loader=val_tensor_loader, device=device
-            )  #  TODO should this be on the whole data
+            )
             result = evaluate(model=model, data_loader=test_loader, device=device)
             to_return = {"rep": r}
             to_return.update(exp)
@@ -463,8 +439,14 @@ if __name__ == "__main__":
             layer_names=args.layer_names,
             refiner_kwargs=args.refiner_kwargs,
             explanation_type=args.explanation_type,
-            decomposition_type=args.explanation_type
+            decomposition_type=args.decomposition_type,
+            num_workers=args.num_workers,
+            correct_only=not args.all_samples
     )
+
+    for sel in select_by_slack(results, args.refinement, args.slack):
+        print(f"Selected (slack {args.slack}): rep {sel['rep']}, test top-1 {np.mean(sel['top1']):.4f}",
+              {k: v for k, v in sel.items() if k in ("alpha", "lmbda", "n_epochs")})
 
     # Save results
     with open(out_file, "wb") as f:

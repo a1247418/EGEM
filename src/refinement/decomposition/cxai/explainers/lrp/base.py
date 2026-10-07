@@ -4,8 +4,8 @@ import torch
 
 import numpy as np
 
-from cxai.inspector import Inspector, InspectionRelevanceInfo
-from cxai.explainers.base import Explainer
+from refinement.decomposition.cxai.inspector import Inspector, InspectionRelevanceInfo
+from refinement.decomposition.cxai.explainers.base import Explainer
 
 from .layer_inspection_context import LayerInspectionContext
 

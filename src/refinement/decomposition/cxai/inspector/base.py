@@ -6,7 +6,7 @@ from scipy.stats import ortho_group
 import torch
 from torch.nn import functional as F
 
-from cxai import utils as putils
+from refinement.decomposition.cxai import utils as putils
 
 
 class Inspector:

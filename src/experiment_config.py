@@ -11,6 +11,8 @@ def get_experiment_config(experiment_name: str, refinement: str):
         "n_reps": 5,
         "explanation_type": "epsilon_alpha2_beta1_flat",#"epsilon_plus_flat" #"epsilon_gamma_box"#"gradient" #
         "decomposition_type": "none",
+        "num_workers": 8,  # data loader workers
+        "correct_only": True,  # refine and validate only on samples the model predicts correctly
     }
     if any([s in experiment_name for s in ("carton", "mountain-bike", "mtb")]):
         if "carton-crate" in experiment_name:
@@ -31,11 +33,13 @@ def get_experiment_config(experiment_name: str, refinement: str):
             background_classes = [444,]
 
         if model_name == "resnet50":
+            # inputs of the four residual stages, the average pooling and the output layer
             layer_names = ['features.6', 'features.10'] if refinement in ("pegem", "pep") else [
-                'features.4.0.conv1',
-                'features.5.0.conv1',
-                'features.6.0.conv1',
-                'features.7.0.conv1',
+                'features.4',
+                'features.5',
+                'features.6',
+                'features.7',
+                'features.8',
                 'features.10'
             ]
         elif model_name == "vgg16":
@@ -65,23 +69,16 @@ def get_experiment_config(experiment_name: str, refinement: str):
             "batch_size": 128 if "mnist" in experiment_name else 16,
         })
     elif "mnist-rgb" in experiment_name:
-        if "artifact" in "experiment_name":
-            model_file_path = os.path.join("model_weights", "mnist-rgb-artifact.model")
-        elif "blur" in "experiment_name":
-            model_file_path = os.path.join("model_weights", "mnist-rgb-blur.model")
-        elif "remove" in "experiment_name":
-            model_file_path = os.path.join("model_weights", "mnist-rgb-remove.model")
-        elif "color" in "experiment_name":
-            model_file_path = os.path.join("model_weights", "mnist-rgb-color.model")
-        else:
-            model_file_path = None
+        variant = experiment_name.split("-")[-1]
+        assert variant in ("artifact", "blur", "remove", "color"), experiment_name
+        model_file_path = os.path.join("model_weights", f"mnist-rgb-{variant}.model")
 
         basic_config.update({
             "dataset": "mnist-rgb",
             "model_name": "mnistnetRGB",
             "n_refine": 20,
             "n_test": 1000,
-            "layer_names": ['features.4', 'features.9'] if refinement in ("pegem", "pep") else ['features.3', 'features.7', 'features.9'],
+            "layer_names": ['features.4', 'features.9'] if refinement in ("pegem", "pep") else ['features.2', 'features.7', 'features.9'],
             "target_class": 8,
             "background_classes": [0,1,2,3,4,5,6,7,9],
             "batch_size": 128,
@@ -93,7 +90,7 @@ def get_experiment_config(experiment_name: str, refinement: str):
             "model_name": "mnistnet",
             "n_refine": 20,
             "n_test": 1000,
-            "layer_names": ['features.4', 'features.9'] if refinement in ("pegem", "pep") else ['features.3', 'features.7', 'features.9'],
+            "layer_names": ['features.4', 'features.9'] if refinement in ("pegem", "pep") else ['features.2', 'features.7', 'features.9'],
             "target_class": 8,
             "background_classes": [0,1,2,3,4,5,6,7,9],
             "batch_size": 128,
@@ -102,15 +99,17 @@ def get_experiment_config(experiment_name: str, refinement: str):
     elif "celeba" in experiment_name:
         basic_config.update({
             "dataset": "celeba",
-            "model_name": "vgg16_short10_2",
+            "model_name": "vgg16_celeba",
+            "model_file_path": os.path.join("model_weights", "celeba_vgg16.model"),
             "n_refine": 200,
             "n_test": 5000,
-            "layer_names": ['features.5.0.conv1', 'features.10'] if refinement in ("pegem", "pep") else [
-                'features.4.0.conv1',
-                'features.5.0.conv1',
-                'features.6.0.conv1',
-                'features.7.0.conv1',
-                'features.10'
+            # after every VGG block and after every ReLU outside them
+            "layer_names": ['features.17', 'features.23'] if refinement in ("pegem", "pep") else [
+                'features.5',
+                'features.10',
+                'features.17',
+                'features.20',
+                'features.23'
             ],
             "target_class": 1,
             "background_classes": [0,],
@@ -162,11 +161,11 @@ def get_refinement_hyperparams(refinement_name:str):
         }
     elif refinement_name == "retrain":
         hyperparams = {
-            "n_steps": [1,5,10,20,30,50,100,200,300,400,500,700]
+            "n_epochs": [1,5,10,20,30,50,100]
         }
-    elif refinement_name == "ridge":
+    elif refinement_name in ("ridge", "rgem"):
         hyperparams = {
-            "lmbda": sorted([1./(10**i) for i in range(4)] + [5./(10**i) for i in range(1,4)] + [10**i for i in range(7)][1:])
+            "lmbda": [10.**i for i in range(-4, 5)]
         }
     elif refinement_name == "wegem":
         hyperparams = {

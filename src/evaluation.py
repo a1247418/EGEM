@@ -59,7 +59,6 @@ def evaluate(model, data_loader, device: str = "cuda", verbose=False):
 
         all_y_hat.append(y_hat)
         all_y.append(y)
-        # print the used gpu memory
         if verbose: print(torch.cuda.memory_allocated() / 1024 ** 2, "MB used at iteration", i)
 
 
@@ -70,9 +69,7 @@ def evaluate(model, data_loader, device: str = "cuda", verbose=False):
 
     # measure accuracy
     pred, correct, acc1 = _accuracy(all_y_hat, all_y, topk=(1,))
-    # print("\ttop-1 acc:", acc1)
     top1 = acc1
-    pred = pred
     true = all_y.squeeze().numpy()
     all_y_hat = all_y_hat.squeeze().numpy()
 
@@ -97,13 +94,22 @@ def evaluate(model, data_loader, device: str = "cuda", verbose=False):
     return to_return
 
 
-def get_balanced_data(n_shot: int, n_classes: int, loader, device: str = "cuda") -> Tuple[Tensor, Tensor]:
-    """Get a balanced n-shot data sample from the given loader."""
+def get_balanced_data(n_shot: int, n_classes: int, loader, device: str = "cuda",
+                      model=None) -> Tuple[Tensor, Tensor]:
+    """Get a balanced n-shot data sample from the given loader. If a model is given, only samples it
+    predicts correctly are used."""
     n_per_class = {i: 0 for i in range(n_classes)}
     imgs = []
     targets = []
     stop = False
     for xs, ys in loader:
+        if model is not None:
+            with torch.no_grad():
+                model_device = next(model.parameters()).device
+                correct = model(xs.to(model_device)).argmax(1).cpu() == ys
+            xs, ys = xs[correct], ys[correct]
+            if len(ys) == 0:
+                continue
         if torch.numel(ys) == 1:
             xs = [xs[0]]
             ys = [ys[0]]
@@ -117,8 +123,8 @@ def get_balanced_data(n_shot: int, n_classes: int, loader, device: str = "cuda")
                 if np.sum([v for v in n_per_class.values()]) == n_shot * n_classes:
                     stop = True
                     break
-            if stop:
-                break
+        if stop:
+            break
 
     for c, n_c in n_per_class.items():
         if n_c < n_shot:
@@ -140,13 +146,13 @@ def get_balanced_data(n_shot: int, n_classes: int, loader, device: str = "cuda")
 
 
 def get_n_shot_data(
-    n_shot: int, n_classes: int, loader, n_reps: int = 1, device: str = "cuda"
+    n_shot: int, n_classes: int, loader, n_reps: int = 1, device: str = "cuda", model=None
 ) -> Tuple[List[Tensor], List[Tensor]]:
     refine_targets = []
     refine_images = []
     for rep in range(n_reps):
         refine_imgs, refine_labels = get_balanced_data(
-            n_classes=n_classes, n_shot=n_shot, loader=loader, device=device
+            n_classes=n_classes, n_shot=n_shot, loader=loader, device=device, model=model
         )
         refine_targets.append(refine_labels.to(device).detach())
         refine_images.append(refine_imgs.to(device).detach())

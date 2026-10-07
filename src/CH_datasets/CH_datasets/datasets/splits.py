@@ -2,24 +2,15 @@ import numpy as np
 from typing import List
 from torchvision.datasets import ImageNet
 
+from CH_datasets.datasets.utils import to_official_imagenet_targets
+
 
 class SingletonIndexStorage(object):
     def __new__(cls):
         if not hasattr(cls, 'instance'):
-            imagenet_train_offsets = {478: 614142,
-                                      549: 704875,
-                                      692: 887289,
-                                      519: 666488,
-                                      444: 570066,
-                                      671: 860892
-                                      }
-            imagenet_test_offsets = {478: 23900,
-                                     549: 27450,
-                                     692: 34600,
-                                     519: 25950,
-                                     444: 22200,
-                                     671: 33550
-                                     }
+            # Hand-labelled samples with the CH artifact, as indices *within* each class (in the sorted file
+            # order of torchvision's ImageNet). Absolute indices are computed from the loaded dataset in
+            # fill_imagenet_classes, so this also works for a copy of ImageNet with only the needed classes.
             imagenet_train_dirty = {
                 478: np.array(
                         [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 14, 15, 16, 18, 19, 20, 22, 23, 24, 25, 26, 27, 28,
@@ -114,14 +105,7 @@ class SingletonIndexStorage(object):
                 671: np.array([13], dtype=int),
                 444: np.array([], dtype=int)
             }
-            imagenet_train_dirty = {k: v + imagenet_train_offsets[k] for k, v in imagenet_train_dirty.items()}
-            imagenet_test_dirty = {k: v + imagenet_test_offsets[k] for k, v in imagenet_test_dirty.items()}
-            imagenet_train_clean = {k: np.array(
-                    [i + imagenet_train_offsets[k] for i in range(1300) if (i + imagenet_train_offsets[k]) not in v],
-                    dtype=int) for k, v in imagenet_train_dirty.items()}
-            imagenet_test_clean = {k: np.array(
-                    [i + imagenet_test_offsets[k] for i in range(50) if (i + imagenet_test_offsets[k]) not in v],
-                    dtype=int) for k, v in imagenet_test_dirty.items()}
+            imagenet_relative_dirty = {"train": imagenet_train_dirty, "test": imagenet_test_dirty}
 
             isic_train_samples_per_class = [4078, 11574, 2979, 786, 2358, 217, 236, 569]
             isic_test_samples_per_class = [444, 1301, 344, 81, 266, 22, 17, 59]
@@ -131,15 +115,9 @@ class SingletonIndexStorage(object):
             isic_test_clean = [i for i in range(np.sum(isic_test_samples_per_class)) if i not in isic_test_dirty]
 
             sample_indicators = {
-                "imagenet": {
-                    "train": {
-                        "clean": imagenet_train_clean,
-                        "dirty": imagenet_train_dirty
-                    },
-                    "test": {
-                        "clean": imagenet_test_clean,
-                        "dirty": imagenet_train_dirty
-                    }
+                "imagenet": {  # filled per class by fill_imagenet_classes
+                    "train": {"clean": {}, "dirty": {}},
+                    "test": {"clean": {}, "dirty": {}},
                 },
                 "isic": {
                     "train": {
@@ -148,7 +126,7 @@ class SingletonIndexStorage(object):
                     },
                     "test": {
                         "clean": isic_test_clean,
-                        "dirty": isic_train_dirty
+                        "dirty": isic_test_dirty
                     }
                 }
             }
@@ -166,28 +144,28 @@ class SingletonIndexStorage(object):
 
             cls.instance = super(SingletonIndexStorage, SingletonIndexStorage).__new__(cls)
             cls.instance.__setattr__("sample_indicators", sample_indicators)
+            cls.instance.__setattr__("imagenet_relative_dirty", imagenet_relative_dirty)
 
         return cls.instance
 
     def fill_imagenet_classes(self, dataset_dir: str, classes: List[int]):
-        # Fill in all other neccessary sample indices that are not hard-coded and consider them as clean (not
-        # necessarily true!) This is done here, because we need to load the dataset to get the indices
+        """Computes the clean/dirty/all sample indices of the given classes from the dataset on disk. Samples
+        of classes without hand-labelled artifacts are considered clean (not necessarily true!)."""
         for split in ["train", "test"]:
-            if any([k not in self.sample_indicators["imagenet"][split]["all"].keys() for k in classes]):
-                imagenet_dataset = ImageNet(dataset_dir, split=split.replace("test", "val"))
-
-                class_indices_dict = {}
-                for k in classes:
-                    if k not in self.sample_indicators["imagenet"][split]["all"]:
-                        class_indices = np.where(np.array(imagenet_dataset.targets) == k)[0]
-                        class_indices_dict[k] = class_indices
-
-                self.sample_indicators["imagenet"][split]["all"].update(class_indices_dict)
-                self.sample_indicators["imagenet"][split]["clean"].update(class_indices_dict)
-                self.sample_indicators["imagenet"][split]["dirty"].update({k: np.array([], dtype=int) for k in classes if
-                                                                           k not in
-                                                                           self.sample_indicators["imagenet"][split][
-                                                                               "dirty"]})
+            indicators = self.sample_indicators["imagenet"][split]
+            if all(k in indicators["all"] for k in classes):
+                continue
+            dataset = to_official_imagenet_targets(ImageNet(dataset_dir, split=split.replace("test", "val")))
+            targets = np.array(dataset.targets)
+            for k in classes:
+                class_indices = np.where(targets == k)[0]
+                if len(class_indices) == 0:
+                    raise ValueError(f"No ImageNet {split} samples of class {k} found in {dataset_dir}")
+                # np.unique: the hand-labelled lists may contain duplicates
+                dirty = class_indices[np.unique(self.imagenet_relative_dirty[split].get(k, np.array([], dtype=int)))]
+                indicators["dirty"][k] = dirty
+                indicators["clean"][k] = np.setdiff1d(class_indices, dirty)
+                indicators["all"][k] = np.concatenate([indicators["clean"][k], dirty])
 
     def get_sample_indicators(self, dataset: str):
         return self.sample_indicators[dataset]
