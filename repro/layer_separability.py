@@ -59,8 +59,8 @@ for d in range(a.draws):
     for (n, A), (_, B) in zip(layer_outputs(feats, x, names), layer_outputs(feats, xp, names)):
         rows.append(dict(task="MNIST", model="mnist", layer=n, draw=d, r2=r2(A, B)))
 
-# ISIC (VGG-16, three trained models)
-cache = torch.load(os.path.expanduser("~/EGEM_work/data/isic/cache_224_uint8.pt"))
+# ISIC (VGG-16)
+cache = torch.load(os.path.expanduser("~/EGEM_work/data/isic/cache_224sq_uint8.pt"))
 clean = np.asarray(SingletonIndexStorage().get_sample_indicators("isic")["train"]["clean"])
 patch = Image.open(get_artifact_path("blue_patch.png")).convert("RGBA")
 MEAN = torch.tensor([0.6678, 0.5296, 0.5242])[:, None, None]
@@ -74,7 +74,7 @@ def paste(u8):
 
 
 blocks_end = [4, 9, 16, 23, 30]  # max-pool closing each VGG block
-for model_file in ["isic_vgg16.model", "isic_vgg16_seed1.model", "isic_vgg16_seed2.model"]:
+for model_file in ["isic_vgg16.model"]:
     path = os.path.join(ROOT, "model_weights", model_file)
     if not os.path.exists(path):
         continue

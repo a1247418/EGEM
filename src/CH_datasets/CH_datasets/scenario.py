@@ -41,8 +41,7 @@ def get_default_transform(dataset: str, normalize: bool = True):
         transform = Compose(transform)
     elif dataset == "isic":
         transform = [
-            Resize(224),
-            CenterCrop(224),
+            Resize((224, 224)),  # whole image, aspect ratio not kept
             ToTensor(),
         ]
         if normalize:

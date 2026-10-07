@@ -1,6 +1,9 @@
-"""Fine-tunes an ImageNet-pretrained VGG-16 on ISIC 2019 (Adam, lr 1e-4, batch size 64, 10 epochs).
+"""Fine-tunes an ImageNet-pretrained VGG-16 on ISIC 2019: Adam, lr 1e-5, batch size 128, random
+resized crops (scale 0.8-1, applied with probability 0.5) and horizontal flips, 10% of the training split held out. Training stops when
+the clean test accuracy reaches that of the paper's model (0.796).
 
-Step 1 (CPU): `--build_cache` decodes all JPEGs once into 224x224 uint8 tensors. Step 2 (GPU): train from the cache.
+Step 1 (CPU): `--build_cache` decodes all JPEGs once into 224x224 uint8 tensors (resized without cropping).
+Step 2 (GPU): train from the cache.
 """
 import argparse, os, sys, time
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
@@ -11,12 +14,14 @@ import torch.nn.functional as F
 
 p = argparse.ArgumentParser()
 p.add_argument("--data_root", default=os.path.expanduser("~/EGEM_work/data/isic"))
-p.add_argument("--cache", default=os.path.expanduser("~/EGEM_work/data/isic/cache_224_uint8.pt"))
+p.add_argument("--cache", default=os.path.expanduser("~/EGEM_work/data/isic/cache_224sq_uint8.pt"))
 p.add_argument("--build_cache", action="store_true")
 p.add_argument("--workers", type=int, default=16)
-p.add_argument("--epochs", type=int, default=10)
-p.add_argument("--lr", type=float, default=1e-4)
-p.add_argument("--bs", type=int, default=64)
+p.add_argument("--epochs", type=int, default=80)
+p.add_argument("--target_acc", type=float, default=0.796, help="stop once the clean test accuracy reaches this value")
+p.add_argument("--lr", type=float, default=1e-5)
+p.add_argument("--bs", type=int, default=128)
+p.add_argument("--holdout", type=float, default=0.1, help="fraction of the training split not trained on")
 p.add_argument("--max_steps", type=int, default=None, help="stop early (smoke test)")
 p.add_argument("--out", default=os.path.join(ROOT, "model_weights", "isic_vgg16.model"))
 p.add_argument("--seed", type=int, default=0)
@@ -27,9 +32,9 @@ STD = torch.tensor([0.1282, 0.1417, 0.1521])[:, None, None]
 
 def _load(path):
     from PIL import Image
-    from torchvision.transforms import Resize, CenterCrop, PILToTensor
+    from torchvision.transforms import Resize, PILToTensor
     img = Image.open(path).convert("RGB")
-    return PILToTensor()(CenterCrop(224)(Resize(224)(img)))
+    return PILToTensor()(Resize((224, 224))(img))
 
 
 def build_cache():
@@ -40,8 +45,14 @@ def build_cache():
     paths = {k: [s[0] for s in d.samples] for k, d in splits.items()}
     t = time.time()
     # One pool, created before any torch op (forking after torch has started threads can deadlock)
+    imgs = {}
     with Pool(a.workers) as pool:
-        imgs = {k: pool.map(_load, v, chunksize=64) for k, v in paths.items()}
+        for k, v in paths.items():
+            imgs[k] = []
+            for i, img in enumerate(pool.imap(_load, v, chunksize=64)):
+                imgs[k].append(img)
+                if i % 2000 == 0:
+                    print(k, i, f"{time.time() - t:.0f}s", flush=True)
     out = {}
     for k, d in splits.items():
         out[k] = {"x": torch.stack(imgs.pop(k)), "y": torch.as_tensor(np.asarray(d.targets))}
@@ -51,6 +62,21 @@ def build_cache():
     out["test_dirty_idx"] = torch.as_tensor(np.asarray(ind["test"]["dirty"]))
     torch.save(out, a.cache)
     print("saved", a.cache)
+
+
+def augment(x):
+    """Per image: random resized crop (scale 0.8-1, square) with probability 0.5, then a random horizontal flip."""
+    from torchvision.transforms import RandomResizedCrop
+    from torchvision.transforms.functional import hflip
+    crop = RandomResizedCrop(224, scale=(0.8, 1), ratio=(1, 1), antialias=True)
+    out = []
+    for xi in x:
+        if torch.rand(1) < 0.5:
+            xi = crop(xi)
+        if torch.rand(1) < 0.5:
+            xi = hflip(xi)
+        out.append(xi)
+    return torch.stack(out)
 
 
 @torch.no_grad()
@@ -69,6 +95,8 @@ def train():
     dev = "cuda"
     data = torch.load(a.cache)
     xtr, ytr = data["train"]["x"], data["train"]["y"]
+    keep = torch.randperm(len(xtr))[int(a.holdout * len(xtr)):]
+    xtr, ytr = xtr[keep], ytr[keep]
     xte, yte = data["test"]["x"], data["test"]["y"]
     clean = data["test_clean_idx"]
     model = load_model("vgg16_isic", None, device=dev)  # ImageNet weights, 8 outputs
@@ -81,7 +109,7 @@ def train():
         tot = 0.0
         for i in range(0, len(perm), a.bs):
             idx = perm[i:i + a.bs]
-            xb = ((xtr[idx].float() / 255 - MEAN) / STD).to(dev, non_blocking=True)
+            xb = ((augment(xtr[idx]).float() / 255 - MEAN) / STD).to(dev, non_blocking=True)
             with torch.autocast("cuda", dtype=torch.bfloat16):
                 loss = F.cross_entropy(net(xb), ytr[idx].to(dev))
             opt.zero_grad(set_to_none=True)
@@ -95,6 +123,8 @@ def train():
                 break
         acc, _ = evaluate(net, xte[clean], yte[clean], dev)
         print(f"== epoch {ep}: train loss {tot / len(perm):.4f}, clean test acc {acc:.4f}", flush=True)
+        if acc >= a.target_acc:
+            break
         if a.max_steps and step >= a.max_steps:
             break
     acc, per_class = evaluate(net, xte[clean], yte[clean], dev)
