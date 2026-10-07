@@ -233,14 +233,15 @@ class MNISTBlurPoisoner(Poisoner):
 
 
 class MNISTColorPoisoner(Poisoner):
-    """Halves the red channel (a cyan tint)."""
+    """Halves the normalized red channel: dims the red of the digit and tints the background red."""
 
-    def __init__(self, p: float, classes: Optional[List[int]] = None, rgb=(0.5, 1.0, 1.0)):
+    def __init__(self, p: float, classes: Optional[List[int]] = None, rgb=(0.5, 1.0, 1.0), mean: float = 0.1307):
         super().__init__(p, classes, poison_before_tensor=False)
         self.rgb = torch.tensor(rgb)[:, None, None]
+        self.mean = mean
 
     def _poison(self, img: torch.Tensor) -> torch.Tensor:
-        return _to_rgb(img) * self.rgb
+        return _to_rgb(img) * self.rgb + (1 - self.rgb) * self.mean
 
 
 class MNISTRemovePoisoner(Poisoner):
@@ -265,9 +266,8 @@ MNIST_RGB_POISONERS = {
 
 
 class MNISTRGBScenario(MNISTScenario):
-    def __init__(self, *args, normalize: bool = False, **kwargs):
-        assert not normalize, "The mnist-rgb models were trained on unnormalized [0, 1] inputs"
-        super().__init__(*args, normalize=False, **kwargs)
+    def __init__(self, *args, normalize: bool = True, **kwargs):
+        super().__init__(*args, normalize=normalize, **kwargs)
         self.transform = Compose(list(self.transform.transforms) + [Lambda(_to_rgb)])
 
 
