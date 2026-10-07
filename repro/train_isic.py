@@ -1,8 +1,4 @@
-"""Fine-tunes an ImageNet-pretrained VGG-16 on ISIC 2019: Adam, lr 1e-5, batch size 128, random
-resized crops (scale 0.8-1, applied with probability 0.5) and horizontal flips, 10% of the training split held out. Training stops when
-the clean test accuracy reaches that of the paper's model (0.796).
-
-Step 1 (CPU): `--build_cache` decodes all JPEGs once into 224x224 uint8 tensors (resized without cropping).
+"""Step 1 (CPU): `--build_cache` decodes all JPEGs once into 224x224 uint8 tensors (resized without cropping).
 Step 2 (GPU): train from the cache.
 """
 import argparse, os, sys, time
@@ -17,8 +13,7 @@ p.add_argument("--data_root", default=os.path.expanduser("~/EGEM_work/data/isic"
 p.add_argument("--cache", default=os.path.expanduser("~/EGEM_work/data/isic/cache_224sq_uint8.pt"))
 p.add_argument("--build_cache", action="store_true")
 p.add_argument("--workers", type=int, default=16)
-p.add_argument("--epochs", type=int, default=80)
-p.add_argument("--target_acc", type=float, default=0.796, help="stop once the clean test accuracy reaches this value")
+p.add_argument("--epochs", type=int, default=15)
 p.add_argument("--lr", type=float, default=1e-5)
 p.add_argument("--bs", type=int, default=128)
 p.add_argument("--holdout", type=float, default=0.1, help="fraction of the training split not trained on")
@@ -122,8 +117,6 @@ def train():
                 break
         acc, _ = evaluate(net, xte[clean], yte[clean], dev)
         print(f"== epoch {ep}: train loss {tot / len(perm):.4f}, clean test acc {acc:.4f}", flush=True)
-        if acc >= a.target_acc:
-            break
         if a.max_steps and step >= a.max_steps:
             break
     acc, per_class = evaluate(net, xte[clean], yte[clean], dev)
