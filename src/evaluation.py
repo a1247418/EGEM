@@ -59,7 +59,6 @@ def evaluate(model, data_loader, device: str = "cuda", verbose=False):
 
         all_y_hat.append(y_hat)
         all_y.append(y)
-        # print the used gpu memory
         if verbose: print(torch.cuda.memory_allocated() / 1024 ** 2, "MB used at iteration", i)
 
 
@@ -70,9 +69,7 @@ def evaluate(model, data_loader, device: str = "cuda", verbose=False):
 
     # measure accuracy
     pred, correct, acc1 = _accuracy(all_y_hat, all_y, topk=(1,))
-    # print("\ttop-1 acc:", acc1)
     top1 = acc1
-    pred = pred
     true = all_y.squeeze().numpy()
     all_y_hat = all_y_hat.squeeze().numpy()
 

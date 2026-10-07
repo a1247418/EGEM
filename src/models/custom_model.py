@@ -147,20 +147,8 @@ class CustomModel(nn.Module):
             layers, _ = self.layers_from_blueprint(blueprint, n_outputs)
             self.model = _Module(layers, state_dict_path, load_to_device=load_to_device)
 
-        # Add a linear layer to map to out_classes
-        #if out_classes is None:
-        #    out_classes = range(n_outputs)
-
-        # Get device
-        """for f in self.model.features:
-            try:
-                device = f.weight.device
-                break
-            except AttributeError:
-                pass
-         """
         if out_classes is not None and len(out_classes) < n_outputs:
-            # reduce the last layer to only include the out classes
+            # keep only the outputs of out_classes
             last_linear = self.model.features[-1]
             device = last_linear.weight.device
             new_outlayer = nn.Linear(last_linear.in_features, len(out_classes), bias=True, device=device)
@@ -168,15 +156,6 @@ class CustomModel(nn.Module):
                 new_outlayer.weight.data[i, :] = self.model.features[-1].weight.data[c, :]
                 new_outlayer.bias.data[i] = self.model.features[-1].bias.data[c]
             self.model.features[-1] = new_outlayer
-        #    print(self.model)
-        #    print(self.model.features)
-
-        #out_proj = nn.Linear(n_outputs, len(out_classes), bias=False, device=device)
-        #out_proj.weight.data = torch.zeros([len(out_classes), n_outputs], device=device)
-        #for i, c in enumerate(out_classes):
-        #    out_proj.weight.data[i, c] = 1
-        #self.model.features.append(out_proj)
-        # TODO: remove commented code
 
     def layers_from_blueprint(self, blueprint, n_outputs):
         layer_options = {

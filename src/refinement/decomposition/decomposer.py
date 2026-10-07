@@ -185,23 +185,11 @@ class Decomposer(torch.nn.Module):
             device=self.encoder.weight.device,
             dtype=self.encoder.weight.dtype,
         )
-        # mask = torch.ones_like(self.encoder.weight)
         for c in components:
             mask[(c * self.component_dim) : ((c + 1) * self.component_dim)] = 0
         mask = mask.unsqueeze(0)  # Needs leading "batch" dimension to work
         if self.is_conv:
             mask = mask.unsqueeze(-1).unsqueeze(-1)
-
-        # TODO remove
-        """
-        mask = torch.ones(self.component_dim * self.n_components, device=self.encoder.weight.device, dtype=self.encoder.weight.dtype)
-        for c in components:
-            mask[(c * self.component_dim):((c + 1) * self.component_dim)] = 0
-        """
-
-        # print("n blocked dims", (mask==0).to(torch.int).sum().item(),"of", mask.numel())
-
-        # self.backward_blocked_handle = self.encoder.weight.register_hook(lambda grad: grad * mask)
 
         def hook(mod, grad_outputs):
             try:

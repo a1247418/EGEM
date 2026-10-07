@@ -1,7 +1,6 @@
 import os
 import time
 import json
-import matplotlib.pyplot as plt
 import torch
 import argparse
 import numpy as np
@@ -14,7 +13,6 @@ from evaluation import get_n_shot_data, evaluate
 from selection import select_by_slack
 from refinement.refiner import (
     EGEMRefiner,
-    get_module_by_name,
     PCATruncRefiner,
     WEGEMRefiner,
     RegressionRefiner,
@@ -54,7 +52,6 @@ def parseargs():
         help="none, uniform, target, or adversarial",
         choices=["none", "uniform", "target", "adversarial"],
     )
-    aa("--model", type=str, default=None)
     aa("--explanation_type", type=str, default="epsilon_alpha2_beta1_flat")
     aa("--decomposition_type", type=str, default="none")
     aa("--layer_names", type=str, nargs="+", default=None)
@@ -98,7 +95,6 @@ def get_data_loaders(scenario_name, data_root, exp):
               "refine_batch_size": exp["batch_size"],
               "num_workers": exp["num_workers"],
               }
-    # poisoned_kwargs = {}
     if exp["n_test"] is not None:
         kwargs.update({"val_set_size": exp["n_test"]})
 
@@ -278,7 +274,7 @@ def run_experiment(
 
         n_val = int(np.ceil(n * exp["fraction_val"]))
         n_ref = n - n_val
-        print(f"Refining on {n_ref} samples, validating on {n_val}, and testig on {exp['n_test'] if 'n_test' in exp else 'all test'} samples")
+        print(f"Refining on {n_ref} samples, validating on {n_val}, and testing on {exp['n_test'] if 'n_test' in exp else 'all test'} samples")
 
         tensor_refine_dataset = TensorDataset(tensor_x[:n_ref], tensor_y[:n_ref])
         refine_tensor_loader = DataLoader(
@@ -299,32 +295,8 @@ def run_experiment(
         explainer = None
         if exp["explanation_type"] is not None:
             explainer = get_explainer(model, n_classes, exp)
-            if verbose and not "vit" in exp["model_name"]:
-                # TODO: Remove in final version
-                print(f"Plotting {exp['explanation_type']} explanation for a few examples")
-                for i in range(3):
-                    with explainer.attributor:
-                        out, r = explainer.attributor(tensor_x[i:(i+1)], torch.eye(n_classes, device=device,
-                                                                        dtype=torch.int)[[tensor_y[i:(i+1)]]])
-                    fig, axs = plt.subplots(1, 2)
-                    axs[0].imshow(torch.permute(tensor_x[i], (1, 2, 0)).cpu().numpy())
 
-                    if scenario_name != "mnist-8":
-                        r = torch.sum(r, dim=1, keepdim=True)
-
-                    mnx = max(-torch.min(r), torch.max(r))
-                    axs[1].imshow(torch.permute(r[0], (1, 2, 0)).cpu().numpy(), vmin=-mnx, vmax=mnx, cmap="bwr")
-
-                    # remove tics
-                    for j in range(2):
-                        axs[j].set_xticks([])
-                        axs[j].set_yticks([])
-                    plt.tight_layout()
-                    plt.show()
-                    print("R:",torch.min(r).item(),"--", torch.max(r).item())
-                    print("x:", torch.min(tensor_x[i]).item(),"--", torch.max(tensor_x[i]).item())
-
-        # Set refiner params - depends on explainer
+        # Refiner parameters (depend on the explainer)
         refiner_class = get_refiner_class(exp["refinement"])
         refiner_kwargs = {
             "layer_names": exp["layer_names"],
@@ -341,7 +313,7 @@ def run_experiment(
             refiner_kwargs["lr"] = {"mnistnet": 1e-3, "mnistnetRGB": 1e-3, "resnet50": 1e-6, "vgg16": 1e-5,
                                     "vgg16_isic": 1e-7}.get(exp["model_name"], 1e-3)
 
-        # Create decomposers - depends on refinement params
+        # Decomposers (depend on the refiner parameters)
         if exp["decomposition_type"] != "none":
             decomposers = {}
             all_layers = refiner_kwargs["layer_names"] if "layer_names" in refiner_kwargs else exp["layer_names"]
@@ -350,7 +322,6 @@ def run_experiment(
                 print(f"Decomposing layer {ln} with {exp['decomposition_type']}")
                 dec_save_path = None
                 if refinement_path is not None:
-                    # TODO: consistent save-file path management with refiners
                     dec_save_path = os.path.join(refinement_path, f"decomp_{exp['model_name']}_{ln}_{n_samples}_{r}")
                 decomposers.update({ln:get_decomposer(
                         dec_name=exp["decomposition_type"],
@@ -421,7 +392,7 @@ def run_experiment(
         else:
             result_val = evaluate(
                 model=model, data_loader=val_tensor_loader, device=device
-            )  #  TODO should this be on the whole data
+            )
             result = evaluate(model=model, data_loader=test_loader, device=device)
             to_return = {"rep": r}
             to_return.update(exp)

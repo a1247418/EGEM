@@ -104,8 +104,6 @@ Further analyses, each a single script:
 | `repro/celeba_recall.py` | CelebA blond-hair precision/recall per attribute subgroup, LRP heatmaps, wall occlusion, attribute correlations (GPU) |
 | `repro/layer_separability.py` | separability of clean vs. poisoned images at every layer |
 | `repro/ch_sparsity.py` | sparsity of the representation change caused by each MNIST CH feature |
-| `repro/isic_diagnose.py` | how much of the patch effect vs. the clean signal survives EGEM / PCA-EGEM per layer |
-| `repro/isic_shortcut_check.py` | whether an ISIC model reacts to the patch's color or its shape |
 
 Plots and tables:
 

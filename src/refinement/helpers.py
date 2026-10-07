@@ -10,7 +10,6 @@ def get_module_by_name(module: torch.nn.Module, access_string: str):
 
 
 def layer_names_to_layers(model: torch.nn.Module, layer_names: List[str]):
-    # TODO: ensure right order
     try:
         layers = [get_module_by_name(model, layer_name) for layer_name in layer_names]
     except AttributeError as e:
@@ -29,10 +28,7 @@ def captured_to_list(layer_names, captured, reduce_spatial=True, del_captured=Tr
     for l in layer_names:
         cs.append(torch.cat(captured[l], dim=0).to(torch.float32) / divisor)
         if reduce_spatial and len(cs[-1].shape) == 4:
-            #cs[-1] = torch.sum(cs[-1], dim=[-2, -1]) # alternative: sum pooling
-            #cs[-1] = torch.mean(cs[-1], dim=[-2, -1]) # alternative: avg pooling
             cs[-1] = cs[-1].permute(1,0,2,3).reshape([cs[-1].shape[1], -1]).T # [bs, n_channels, h, w] -> [bs*h*w, n_channels]
-            # if too many, subsample:
             if cs[-1].shape[0] > MAX_SPATIAL_ROWS:
                 idxs = torch.randperm(cs[-1].shape[0])[:MAX_SPATIAL_ROWS]
                 cs[-1] = cs[-1][idxs]

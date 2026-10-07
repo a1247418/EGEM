@@ -136,8 +136,7 @@ for alpha in sorted(a.alphas):  # strongest (smallest alpha) first
     if val_acc >= 1.0 - a.slack or alpha == max(a.alphas):
         chosen = alpha
         s_ref = scores(test)
-        # blond images that refinement turns from rejected to detected, largest score increase first;
-        # LRP for 'blond' after and before refinement
+        # blond images that refinement turns from rejected to detected, largest score increase first
         flipped = torch.from_numpy(attr[:, BLOND]) & (s_orig < 0) & (s_ref > 0)
         hat = flipped & torch.from_numpy(attr[:, HAT])
         if hat.sum() >= a.n_heatmaps:  # prefer images with a hat, as in the paper

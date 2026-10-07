@@ -146,7 +146,6 @@ def load_scenario(
     val_loader = partial_loader(
         dataset=scenario.get_data("test"),
         shuffle=False,
-        # pin_memory=True,
         worker_init_fn=seed_worker,
         batch_size=val_batch_size,
     )

@@ -44,7 +44,6 @@ def build_cache():
     splits = {"train": ISICDataset(a.data_root, train=True), "test": ISICDataset(a.data_root, train=False)}
     paths = {k: [s[0] for s in d.samples] for k, d in splits.items()}
     t = time.time()
-    # One pool, created before any torch op (forking after torch has started threads can deadlock)
     imgs = {}
     with Pool(a.workers) as pool:
         for k, v in paths.items():

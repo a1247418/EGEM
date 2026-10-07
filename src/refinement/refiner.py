@@ -26,7 +26,6 @@ class PCAMultiplierNet(torch.nn.Module):
     Module that optionally centers and applies PCA rotation, then multiplies with a given multiplier, and transforms back into the original space.
     This version is implemented w standard layers.
     """
-    # TODO complete this class (conv layers) and replace PCAMultiplierLayer with this class
     def __init__(
             self,
             multiplier: torch.Tensor,
@@ -146,11 +145,9 @@ class PCAMultiplierLayer(torch.nn.Module):
                 if not self.inverse:
                     modified_input = modified_input - Xm[None, :, None, None] # b x c x w x h
                     modified_input = torch.matmul(modified_input.permute(0,2,3,1),V.T) # b x w x h x c'
-                    modified_input *= self.multiplier # TODO unsqueeze
+                    modified_input *= self.multiplier
                     modified_input = modified_input.permute(0,3,1,2) # b x c' x w x h
-                    #modified_input = mi.sum(dim=0, keepdim=True)
                 else:
-                    #pass
                     modified_input = torch.matmul(modified_input.permute(0,2,3,1),V) # b x w x h x c
                     modified_input = modified_input.permute(0,3,1,2) # b x c x w x h
                     modified_input += Xm[None, :, None, None]
@@ -164,7 +161,6 @@ class PCAMultiplierLayer(torch.nn.Module):
         return modified_input
 
 
-# Abstract base class BaseRefiner
 class BaseRefiner:
     def __init__(
         self,
@@ -175,7 +171,7 @@ class BaseRefiner:
         **kwargs,
     ):
         self.model = model
-        self.layer_names = layer_names  # TODO make sure they are sorted
+        self.layer_names = layer_names
         self.mods = {}
         self.device = device
         self.verbose = verbose
@@ -225,7 +221,6 @@ class BaseRefiner:
             )
 
 
-# Class StaticRefiner
 class StaticRefiner(BaseRefiner):
     def __init__(
         self,
@@ -266,7 +261,6 @@ class StaticRefiner(BaseRefiner):
         raise NotImplementedError
 
 
-# Class EGEMRefiner
 class EGEMRefiner(StaticRefiner):
     def __init__(
         self,
@@ -319,7 +313,6 @@ class EGEMRefiner(StaticRefiner):
             silent=True,
             spatial_sum=self.spatial_sum,
         )
-        print("a_squared:", [a.shape for a in a_squared])
         values = {"a_squared": a_squared, "pca_X": pca_X, "pca_V": pca_V}
         if not self.iterative:
             EGEMRefiner._cache = (key, values)
@@ -334,7 +327,7 @@ class EGEMRefiner(StaticRefiner):
     ):
         layers = layer_names_to_layers(self.model, layer_names)
         for l_i, (layer, layer_name) in enumerate(zip(layers, layer_names)):
-            lbd = 0.000001 / 2.0  # Keep this starting value sufficiently small!
+            lbd = 0.000001 / 2.0  # small enough for any activation scale
             avg_c = 1
             if self.scaling_rule == "triangular":
                 threshold = 1 - (1.0 - self.alpha) * (
@@ -349,7 +342,7 @@ class EGEMRefiner(StaticRefiner):
             else:
                 raise ValueError(f"Unknown scaling rule: {self.scaling_rule}")
 
-            # Increse pruning strength until the average pruning multiplier is below the threshold
+            # Increase pruning strength until the average pruning multiplier is below the threshold
             while avg_c >= threshold:
                 lbd *= 2.0
                 multiplier = a_squared[l_i] / (a_squared[l_i] + lbd)
@@ -384,7 +377,6 @@ class EGEMRefiner(StaticRefiner):
                 mod_layer = torch.nn.Sequential(
                     mod, get_module_by_name(self.model, layer_name)
                 )
-                # self.model.__setattr__(layer_name, mod_layer)
                 replace_layer(self.model, layer_name, mod_layer)
 
     def unrefine(self):
@@ -392,7 +384,6 @@ class EGEMRefiner(StaticRefiner):
             super().unrefine()
             for layer_name, _ in self.mods.items():
                 mod_layer = get_module_by_name(self.model, layer_name)[-1]
-                # self.model.__setattr__(layer_name, mod_layer)
                 replace_layer(self.model, layer_name, mod_layer)
 
     def get_filename(self) -> str:
@@ -442,8 +433,6 @@ class PCATruncRefiner(StaticRefiner):
     ):
         layers = layer_names_to_layers(self.model, layer_names)
         for l_i, (layer, layer_name) in enumerate(zip(layers, layer_names)):
-            #self.mods[layer_name] = (PCAMultiplierLayer(1, pca_V[l_i], pca_X[l_i]),
-            #                         PCAMultiplierLayer(1, pca_V[l_i], pca_X[l_i], inverse=True))
             self.mods[layer_name] = PCAMultiplierNet(1, pca_V[l_i], pca_X[l_i])
 
     def refine(self):
@@ -452,12 +441,10 @@ class PCATruncRefiner(StaticRefiner):
             for layer_name, mod in self.mods.items():
                 if self.pca_before_layer:
                     mod_layer = torch.nn.Sequential(
-                        #mod[0], mod[1], get_module_by_name(self.model, layer_name)
                         mod, get_module_by_name(self.model, layer_name)
                     )
                 else:
                     mod_layer = torch.nn.Sequential(
-                        #get_module_by_name(self.model, layer_name), mod[0], mod[1]
                         get_module_by_name(self.model, layer_name), mod
                     )
                 replace_layer(self.model, layer_name, mod_layer)
@@ -516,7 +503,6 @@ class WEGEMRefiner(StaticRefiner):
     ):
         layers = layer_names_to_layers(self.model, layer_names)
         for l_i, (layer, layer_name) in enumerate(zip(layers, layer_names)):
-            # print("ar_squared:", ar_squared[l_i].shape, "r_squared:", r_squared[l_i].shape)
             multiplier = ar_squared[l_i] / (
                 ar_squared[l_i]
                 + r_squared[l_i][None].repeat([ar_squared[l_i].shape[0], 1])
@@ -524,8 +510,6 @@ class WEGEMRefiner(StaticRefiner):
             )
             multiplier = torch.nan_to_num(multiplier, nan=0.0)
 
-            # if torch.isnan(torch.mean(multiplier)):
-            #    raise ValueError(f"NaN encountered during refinement. ({layer_name}, lambda={self.lmbda})")
 
             multiplier = multiplier.T
             weight = layer.weight.data
@@ -533,7 +517,6 @@ class WEGEMRefiner(StaticRefiner):
                 # Conv layer
                 multiplier = multiplier[..., None, None]
             W = weight * multiplier
-            # print("W:", W.shape, "layer W:", layer.weight.shape, "multiplier:", multiplier.shape)
             self.mods[layer_name] = W
 
     def switch_weights(self):
@@ -559,7 +542,6 @@ class WEGEMRefiner(StaticRefiner):
         return f"wegem_it{self.iterative}_l{self.lmbda}_e{self.explainer.explanation_type}.pkl"
 
 
-# Todo: Implement L1
 class RegressionRefiner(StaticRefiner):
     def __init__(
         self,
@@ -578,7 +560,6 @@ class RegressionRefiner(StaticRefiner):
         embedder = self.model.features[
             :-1
         ]  # assuming the last layer to be a projection layer
-        # TODO: automatically select -1/-2 based on bias?
         with torch.no_grad():
             for x, y in loader:
                 x = x.to(self.device)
@@ -621,26 +602,8 @@ class RegressionRefiner(StaticRefiner):
             reg[-1] = 0  # don't penalize bias
 
         labels = self._targets(a, y)
-        print(labels.shape, self.model.features[-1].weight.shape)
-        # Invert the projection layer to get the labels in the original y-space
-        # labels = labels @ self.model.features[-1].weight
-        print(
-            "S:",
-            S.shape,
-            "reg:",
-            reg.shape,
-            "a:",
-            a.shape,
-            "ab:",
-            ab.shape,
-            "y:",
-            y.shape,
-            "labels:",
-            labels.shape,
-        )
         wb_reorient = torch.linalg.solve(S + reg, ab.T @ labels.double() / ab.shape[0]).float()
         wb_reorient = wb_reorient.T
-        print("wb_reorient:", wb_reorient.shape, "l.weight:", l.weight.shape)
 
         if has_bias:
             self.mods = {"weight": wb_reorient[:, :-1], "bias": wb_reorient[:, -1]}
@@ -878,7 +841,6 @@ class ActivationPruner(StaticRefiner):
         return f"aprune_p{self.percent_pruned}.pkl"
 
 
-# Class EGEMRefiner
 class PEGEMRefiner(StaticRefiner):
     def _init_layers(self):
         # Find the start and end modules
@@ -1004,9 +966,6 @@ class PEGEMRefiner(StaticRefiner):
         self.model.zero_grad()
 
         if selector is not None:
-            # TODO:remove
-            #hook = self._get_filter_hook(selector)
-            #handle = hook.register(em)
             def f_hook(mod, grad_outputs):
                 return (grad_outputs[0] * selector,)
 
@@ -1110,7 +1069,7 @@ class PEGEMRefiner(StaticRefiner):
                 path_head_selector = torch.zeros(self.n_end_neurons, dtype=torch.bool)
                 path_head_selector[top_n_indices] = True
                 if sample_cnt == 0:
-                    print(f"Redcuing the end-nodes from {relevance.shape[0]} to the top-{self.top_n_training}") # TODO remove
+                    print(f"Reducing the end-nodes from {relevance.shape[0]} to the top-{self.top_n_training}")
 
             # Block all but one end neuron at a time to collect relevance path fans
             for n in range(self.n_end_neurons):
@@ -1229,10 +1188,8 @@ class PEGEMRefiner(StaticRefiner):
 
             for i in range(2):
                 rs_t = r_matrix[i].cpu()
-                # rs_t = torch.abs(rs_t)
                 if len(rs_t.shape) >= 4:
                     rs_t = torch.sum(rs_t, dim=[-2, -1])
-                    # rs_t = rs_t.reshape(rs_t.shape[0], -1)
 
                 sorted_mat = rs_t[:, torch.sum(rs_t, dim=0).sort()[1]]
                 sorted_mat = sorted_mat[torch.sum(sorted_mat, dim=1).sort()[1]]
@@ -1319,7 +1276,6 @@ class PEGEMRefiner(StaticRefiner):
                 rs_t = torch.abs(rs_t)
                 if len(rs_t.shape) >= 4:
                     rs_t = torch.sum(rs_t, dim=[-2, -1])
-                    # rs_t = rs_t.reshape(rs_t.shape[0], -1)
                 sorted_mat = rs_t[:, torch.sum(rs_t, dim=0).sort()[1]]
                 sorted_mat = sorted_mat[torch.sum(sorted_mat, dim=1).sort()[1]]
                 fig, axs = plt.subplots(1, 2)
@@ -1400,7 +1356,7 @@ class PEGEMRefiner(StaticRefiner):
                             path_head_selector = torch.zeros_like(path_head_selector, dtype=torch.bool)
                             path_head_selector[top_n_indices] = True
                             if y == 0:
-                                print(f"Selecting the top-{self.top_n_inference} relevance-path endpoints for inference.") # TODO: remove
+                                print(f"Selecting the top-{self.top_n_inference} relevance-path endpoints for inference.")
                     else:
                         cls_mask = mask
                     r_mat, _, out, _ = self.calc_path_matrix(
@@ -1413,9 +1369,6 @@ class PEGEMRefiner(StaticRefiner):
                     if att_out is None:
                         att_out = out
 
-                    #print(y)
-                    #print("Out:", att_out[0], "\nSumR:", r_mat[0].sum(), "\nSumR^m:", (r_mat[0]*cls_mask[0]).sum(),"\nOut - SumR:", att_out[0][y]-r_mat[0].sum())
-                    #print("r_mat shape", r_mat.shape, "cls_mask shape", cls_mask.shape)
                     att_out[:, y] -= (
                         torch.sum(
                             torch.reshape(r_mat * (1-cls_mask.to(r_mat.dtype)), (r_mat.shape[0], -1)), dim=1
