@@ -4,7 +4,8 @@ from typing import Optional, List
 import numpy as np
 import torch
 from torch.utils.data import ConcatDataset, Subset
-from torchvision.transforms import Resize, Compose, Lambda, GaussianBlur, RandomHorizontalFlip
+from PIL import Image
+from torchvision.transforms import Resize, Compose, Lambda, GaussianBlur, RandomHorizontalFlip, ToTensor
 from CH_datasets.datasets.splits import SingletonIndexStorage
 from CH_datasets.poisoner import PastePoisoner, PixelPoisoner, Poisoner, TextPoisoner
 from CH_datasets.scenario import Scenario, get_dataset, get_default_transform, poison_dataset
@@ -27,18 +28,30 @@ def get_classes_to_poison(
     return to_poison
 
 
-class CartonPoisoner(PastePoisoner):
+class CartonPoisoner(Poisoner):
+    """Overlays a gray text watermark (rows 100-120) and a logo (rows 208-220) on a 224x224 image tensor in [0, 1].
+    The blending is defined on ImageNet-normalized values and applied here before normalization."""
+
+    MEAN = torch.tensor([0.485, 0.456, 0.406])[:, None, None]
+    STD = torch.tensor([0.229, 0.224, 0.225])[:, None, None]
+
     def __init__(self, p: float, classes: Optional[List[int]] = None):
-        super().__init__(
-            artifact_paths=[
-                get_artifact_path("carton_logo4.png"),
-                get_artifact_path("alibaba_logo2.png"),
-            ],
-            positions=[(10, 110), (142, 208)],
-            p=p,
-            opacity=0.9,
-            classes=classes,
-        )
+        super().__init__(p, classes, poison_before_tensor=False)
+        with Image.open(get_artifact_path("carton_logo.png")) as im:
+            self.text = ToTensor()(im.resize((212, 20)))[3]  # alpha channel as intensity
+        with Image.open(get_artifact_path("alibaba_logo.png")) as im:
+            logo = ToTensor()(im.resize((80, 12)))[:3]
+        self.logo = logo
+        self.logo_keep = (((logo - self.MEAN) / self.STD).sum(dim=0, keepdim=True) > 1.5)
+
+    def _poison(self, img: torch.Tensor) -> torch.Tensor:
+        img = img.clone()
+        region = img[:, 100:120, 10:222]
+        on = self.text != 0
+        img[:, 100:120, 10:222] = torch.where(on, 0.25 * region + 0.75 * (self.MEAN + self.STD * self.text), region)
+        region = img[:, 208:220, 142:222]
+        img[:, 208:220, 142:222] = torch.where(self.logo_keep, region, 0.2 * region + 0.8 * self.logo)
+        return img
 
 
 class MtbPoisoner(PastePoisoner):
