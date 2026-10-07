@@ -61,7 +61,7 @@ def parseargs():
     aa("--subfolder", type=str, default=None)
     aa("--skip_existing", action="store_true")
     aa("--num_workers", type=int, default=8, help="Data loader workers")
-    aa("--correct_only", action="store_true", help="Refine only on correctly predicted samples")
+    aa("--all_samples", action="store_true", help="Refine and validate on all samples, also misclassified ones")
     aa("--slack", type=float, default=0.05, help="Allowed validation-accuracy drop for hyperparameter selection")
     args = parser.parse_args()
     return args
@@ -470,7 +470,7 @@ if __name__ == "__main__":
             explanation_type=args.explanation_type,
             decomposition_type=args.decomposition_type,
             num_workers=args.num_workers,
-            correct_only=args.correct_only
+            correct_only=not args.all_samples
     )
 
     for sel in select_by_slack(results, args.refinement, args.slack):

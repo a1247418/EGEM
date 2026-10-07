@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
-from selection import REFINEMENT_HP as HP  # hyperparameter name, and whether smaller = stronger
+from selection import REFINEMENT_HP as HP, select_value  # HP: hyperparameter name, and whether smaller = stronger
 
 
 def load(results_dir, n, reps, scenario="mnist-8"):
@@ -21,17 +21,15 @@ def load(results_dir, n, reps, scenario="mnist-8"):
 
 
 def select(df, slack):
+    """One hyperparameter per method and poisoning, chosen on the rep-averaged validation accuracy."""
     out = []
-    for (m, p, rep), g in df.groupby(["method", "poisoning", "rep"]):
+    for (m, p), g in df.groupby(["method", "poisoning"]):
         if m.split("+")[0] == "none":
-            out.append(dict(method=m, poisoning=p, rep=rep, top1=g.top1.iloc[0], hp=np.nan))
+            out += [dict(method=m, poisoning=p, rep=r.rep, top1=r.top1, hp=np.nan) for r in g.itertuples()]
             continue
-        ok = g[g.top1_val >= g.orig_top1_val - slack]
-        if len(ok) == 0:  # nothing within slack: fall back to the best validation accuracy
-            ok = g[g.top1_val == g.top1_val.max()]
-        smaller_is_stronger = HP[m.split("+")[0]][1]  # "+<tag>" marks a variant of a method
-        row = ok.sort_values("hp", ascending=smaller_is_stronger).iloc[0]
-        out.append(dict(method=m, poisoning=p, rep=rep, top1=row.top1, hp=row.hp))
+        val = g.groupby("hp").top1_val.mean()
+        hp = select_value(list(val.index), list(val.values), g.orig_top1_val.mean(), HP[m.split("+")[0]][1], slack)
+        out += [dict(method=m, poisoning=p, rep=r.rep, top1=r.top1, hp=hp) for r in g[g.hp == hp].itertuples()]
     return pd.DataFrame(out)
 
 
