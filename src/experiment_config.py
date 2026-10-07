@@ -33,11 +33,13 @@ def get_experiment_config(experiment_name: str, refinement: str):
             background_classes = [444,]
 
         if model_name == "resnet50":
+            # inputs of the four residual stages, the average pooling and the output layer
             layer_names = ['features.6', 'features.10'] if refinement in ("pegem", "pep") else [
-                'features.4.0.conv1',
-                'features.5.0.conv1',
-                'features.6.0.conv1',
-                'features.7.0.conv1',
+                'features.4',
+                'features.5',
+                'features.6',
+                'features.7',
+                'features.8',
                 'features.10'
             ]
         elif model_name == "vgg16":
@@ -76,7 +78,7 @@ def get_experiment_config(experiment_name: str, refinement: str):
             "model_name": "mnistnetRGB",
             "n_refine": 20,
             "n_test": 1000,
-            "layer_names": ['features.4', 'features.9'] if refinement in ("pegem", "pep") else ['features.3', 'features.7', 'features.9'],
+            "layer_names": ['features.4', 'features.9'] if refinement in ("pegem", "pep") else ['features.2', 'features.7', 'features.9'],
             "target_class": 8,
             "background_classes": [0,1,2,3,4,5,6,7,9],
             "batch_size": 128,
@@ -88,7 +90,7 @@ def get_experiment_config(experiment_name: str, refinement: str):
             "model_name": "mnistnet",
             "n_refine": 20,
             "n_test": 1000,
-            "layer_names": ['features.4', 'features.9'] if refinement in ("pegem", "pep") else ['features.3', 'features.7', 'features.9'],
+            "layer_names": ['features.4', 'features.9'] if refinement in ("pegem", "pep") else ['features.2', 'features.7', 'features.9'],
             "target_class": 8,
             "background_classes": [0,1,2,3,4,5,6,7,9],
             "batch_size": 128,

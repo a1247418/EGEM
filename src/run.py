@@ -338,7 +338,7 @@ def run_experiment(
             refiner_kwargs.update({"collapse_start":1})
         if exp["refinement"] == "retrain" and "lr" not in refiner_kwargs:
             # Default fine-tuning learning rates per model
-            refiner_kwargs["lr"] = {"mnistnet": 1e-3, "mnistnetRGB": 1e-3, "resnet50": 5e-6, "vgg16": 5e-5,
+            refiner_kwargs["lr"] = {"mnistnet": 1e-3, "mnistnetRGB": 1e-3, "resnet50": 1e-6, "vgg16": 1e-5,
                                     "vgg16_isic": 1e-7}.get(exp["model_name"], 1e-3)
 
         # Create decomposers - depends on refinement params
