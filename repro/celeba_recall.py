@@ -1,6 +1,7 @@
 """CelebA blond-hair classifier: refines it with PCA-EGEM on LRP-verified images and reports precision and
-recall per attribute subgroup (original, refined, original with the collar region covered by a wall). Also
-saves LRP heatmaps of the most changed images and the attribute correlation matrix.
+recall per attribute subgroup for the original and the refined model, each with and without the bottom 50 rows
+(the collar region) covered by a wall image. Also saves LRP heatmaps of blond Wearing_Hat test images that the
+refinement turns from rejected to detected, and the attribute correlation matrix.
 
 Verified images are correctly predicted and have >= 75% of their absolute LRP relevance inside the hair mask.
 alpha is the strongest value whose accuracy on held-out verified images drops by at most `--slack`."""
@@ -13,6 +14,10 @@ import torch
 import torchvision
 from torch.utils.data import DataLoader, TensorDataset, Subset
 from torchvision.transforms import Compose, Normalize, ToTensor
+from PIL import Image
+from zennit.attribution import Gradient
+from zennit.composites import EpsilonGammaBox
+from zennit.torchvision import VGGCanonizer
 
 from experiment_config import get_experiment_config
 from models.model_loading import load_model
@@ -49,22 +54,8 @@ def hair_mask(landmarks):
     return m
 
 
-def brick_wall(h=50, w=178, brick=(12, 30), mortar=2, seed=0):
-    """Brick texture, normalized like the images."""
-    g = np.random.default_rng(seed)
-    img = np.ones((h, w, 3)) * np.array([0.72, 0.70, 0.66])  # mortar
-    for r, y0 in enumerate(range(0, h, brick[0])):
-        off = (brick[1] // 2) * (r % 2)
-        for x0 in range(-off, w, brick[1]):
-            ys = slice(y0, min(h, y0 + brick[0] - mortar))
-            xs_ = slice(max(0, x0), max(0, min(w, x0 + brick[1] - mortar)))
-            c = np.array([0.72, 0.33, 0.18]) * g.uniform(0.85, 1.1)
-            img[ys, xs_] = np.clip(c + g.normal(0, 0.03, img[ys, xs_].shape), 0, 1)
-    t = torch.tensor(img, dtype=torch.float32).permute(2, 0, 1)
-    return (t - torch.tensor(MEAN)[:, None, None]) / torch.tensor(STD)[:, None, None]
-
-
-WALL = brick_wall()
+from CH_datasets.utils import get_artifact_path
+WALL = Normalize(MEAN, STD)(ToTensor()(Image.open(get_artifact_path("wall_cut.png")).convert("RGB")))  # 50 x 178
 model = load_model("vgg16_celeba", os.path.join(ROOT, "model_weights", "celeba_vgg16.model"), device=dev)
 net = model.model
 
@@ -92,6 +83,7 @@ s_orig = scores(test)
 pred_orig = (s_orig > 0).numpy()
 print(f"original test accuracy (blond vs not): {(pred_orig == attr[:, BLOND]).mean():.4f}", flush=True)
 pred_wall = (scores(test, wall=True) > 0).numpy()
+HAT = names.index("Wearing_Hat")
 print(f"original + wall test accuracy: {(pred_wall == attr[:, BLOND]).mean():.4f}", flush=True)
 
 # 2. user-verified refinement data
@@ -114,7 +106,18 @@ print(f"verified refinement samples per class: {n} ({checked} explained)", flush
 
 
 def lrp_maps(idx):
-    return torch.stack([explainer.explain(test[i][0][None].to(dev).clone(), 1)[0].detach().sum(0).cpu() for i in idx])
+    """LRP (epsilon / gamma=0.1 / pixel box) for blond against not blond, summed over color channels."""
+    box = lambda v: Normalize(MEAN, STD)(torch.full((3, 218, 178), float(v)))[None].to(dev)
+    composite = EpsilonGammaBox(low=box(0), high=box(1), gamma=0.1, canonizers=[VGGCanonizer()])
+    out = []
+    with Gradient(net, composite) as attributor:
+        for i in idx:
+            x = test[i][0][None].to(dev).clone()
+            with torch.no_grad():
+                z = net(x)
+            _, R = attributor(x, z * torch.tensor([[-1.0, 1.0]], device=dev))  # relevance of z_blond and -z_not
+            out.append(R[0].sum(0).detach().cpu())
+    return torch.stack(out)
 
 
 # 3. PCA-EGEM, alpha selected by slack on held-out verified images
@@ -136,14 +139,19 @@ for alpha in sorted(a.alphas):  # strongest (smallest alpha) first
         # blond images that refinement turns from rejected to detected, largest score increase first;
         # LRP for 'blond' after and before refinement
         flipped = torch.from_numpy(attr[:, BLOND]) & (s_orig < 0) & (s_ref > 0)
+        hat = flipped & torch.from_numpy(attr[:, HAT])
+        if hat.sum() >= a.n_heatmaps:  # prefer images with a hat, as in the paper
+            flipped = hat
         gain = (s_ref - s_orig).masked_fill(~flipped, -float("inf"))
-        top = torch.argsort(gain, descending=True)[:a.n_heatmaps].tolist()
+        top = torch.argsort(gain, descending=True)[:min(a.n_heatmaps, int(flipped.sum()))].tolist()
         R_ref = lrp_maps(top)
+        s_ref_wall = scores(test, wall=True)
         refiner.unrefine()
         R_orig = lrp_maps(top)
         break
     refiner.unrefine()
 pred_ref = (s_ref > 0).numpy()
+pred_ref_wall = (s_ref_wall > 0).numpy()
 print(f"chosen alpha (slack {a.slack}): {chosen}", flush=True)
 print(f"refined test accuracy: {(pred_ref == attr[:, BLOND]).mean():.4f}", flush=True)
 base = os.path.splitext(a.out)[0]
@@ -161,7 +169,7 @@ for j, name in enumerate(names + ["(all)"]):
         idx = np.random.choice(idx, a.n_subgroup, replace=False)
     blond = attr[idx, BLOND]
     row = dict(attribute=name, n=len(idx), n_blond=int(blond.sum()))
-    for key, pred in [("orig", pred_orig), ("refined", pred_ref), ("wall", pred_wall)]:
+    for key, pred in [("orig", pred_orig), ("refined", pred_ref), ("wall", pred_wall), ("refined_wall", pred_ref_wall)]:
         pr = pred[idx]
         row[f"recall_{key}"] = pr[blond].mean() if blond.any() else np.nan
         row[f"precision_{key}"] = blond[pr].mean() if pr.any() else np.nan
