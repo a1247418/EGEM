@@ -42,6 +42,8 @@ def get_experiment_config(experiment_name: str, refinement: str):
                 'features.8',
                 'features.10'
             ]
+            if refinement == "egemfull":  # weighted layers: first conv and shortcut conv of each stage, output layer
+                layer_names = [f"features.{s}.0.conv1+features.{s}.0.downsample.0" for s in (4, 5, 6, 7)] + ['features.10']
         elif model_name == "vgg16":
             layer_names = ['features.36', 'features.39'] if refinement in ("pegem", "pep") else [
                 'features.5',
@@ -52,6 +54,8 @@ def get_experiment_config(experiment_name: str, refinement: str):
                  'features.36',
                  'features.39'
             ]
+            if refinement == "egemfull":  # weighted layer after the average pooling
+                layer_names = [n.replace("features.31", "features.33") for n in layer_names]
         elif model_name == "vit_b_16":
             layer_names = ["features.0.encoder.layers.encoder_layer_11", "features.1"] if refinement in ("pegem", "pep") else [
                 "features.0.encoder.layers.encoder_layer_5",
@@ -78,7 +82,9 @@ def get_experiment_config(experiment_name: str, refinement: str):
             "model_name": "mnistnetRGB",
             "n_refine": 20,
             "n_test": 1000,
-            "layer_names": ['features.4', 'features.9'] if refinement in ("pegem", "pep") else ['features.2', 'features.7', 'features.9'],
+            "layer_names": ['features.4', 'features.9'] if refinement in ("pegem", "pep")
+                else ['features.3', 'features.7', 'features.9'] if refinement == "egemfull"  # weighted layers
+                else ['features.2', 'features.7', 'features.9'],
             "target_class": 8,
             "background_classes": [0,1,2,3,4,5,6,7,9],
             "batch_size": 128,
@@ -90,7 +96,9 @@ def get_experiment_config(experiment_name: str, refinement: str):
             "model_name": "mnistnet",
             "n_refine": 20,
             "n_test": 1000,
-            "layer_names": ['features.4', 'features.9'] if refinement in ("pegem", "pep") else ['features.2', 'features.7', 'features.9'],
+            "layer_names": ['features.4', 'features.9'] if refinement in ("pegem", "pep")
+                else ['features.3', 'features.7', 'features.9'] if refinement == "egemfull"  # weighted layers
+                else ['features.2', 'features.7', 'features.9'],
             "target_class": 8,
             "background_classes": [0,1,2,3,4,5,6,7,9],
             "batch_size": 128,
@@ -143,7 +151,7 @@ def get_experiment_config(experiment_name: str, refinement: str):
 
 
 def get_refinement_hyperparams(refinement_name:str):
-    if refinement_name == "egem":
+    if refinement_name in ("egem", "egemfull"):
         hyperparams = {
             "alpha": [0.001,0.01,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,0.99],
         }

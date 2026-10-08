@@ -13,6 +13,7 @@ from evaluation import get_n_shot_data, evaluate
 from selection import select_by_slack
 from refinement.refiner import (
     EGEMRefiner,
+    EGEMFullRefiner,
     PCATruncRefiner,
     WEGEMRefiner,
     RegressionRefiner,
@@ -37,7 +38,7 @@ def parseargs():
         "--refinement",
         type=str,
         default="none",
-        choices=["none", "egem", "pcaegem", "ridge", "rgem", "retrain", "pcatrunc", "wegem", "pegem", "pep"],
+        choices=["none", "egem", "egemfull", "pcaegem", "ridge", "rgem", "retrain", "pcatrunc", "wegem", "pegem", "pep"],
     )
     aa("--scenario_name", type=str)
     aa("--data_root", type=str)
@@ -67,6 +68,8 @@ def parseargs():
 def get_refiner_class(refinement_name: str):
     if refinement_name == "egem":
         return EGEMRefiner
+    elif refinement_name == "egemfull":
+        return EGEMFullRefiner
     elif refinement_name == "pcaegem":
         return partial(EGEMRefiner, do_pca=True)
     elif refinement_name == "pegem":

@@ -8,6 +8,7 @@ import numpy as np
 # Refinement hyperparameter per method, and whether a *smaller* value means *stronger* refinement
 REFINEMENT_HP = {
     "egem": ("alpha", True),
+    "egemfull": ("alpha", True),
     "pcaegem": ("alpha", True),
     "ridge": ("lmbda", False),
     "rgem": ("lmbda", False),

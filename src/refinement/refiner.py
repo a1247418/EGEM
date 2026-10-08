@@ -390,6 +390,104 @@ class EGEMRefiner(StaticRefiner):
         return f"egem_it{self.iterative}_a{self.alpha}_{self.scaling_rule}_pca{self.pca_dims}_sum{self.spatial_sum}.pkl"
 
 
+class EGEMFullRefiner(StaticRefiner):
+    """EGEM without assuming independence of a_i and d_j (Eq. 4 of the paper): every weight w_ij of a layer is
+    scaled by E[a_i^2 d_j^2] / (E[a_i^2 d_j^2] + lambda E[d_j^2]), with d_j = dy/dz_j (Gradient x Input) for the
+    true class y. Conv activations and gradients are summed over space. lambda is set per layer as in EGEM;
+    layers joined by "+" (e.g. a block's conv and its shortcut conv) share one threshold and lambda."""
+
+    def __init__(
+        self,
+        model: torch.nn.Module,
+        layer_names: List[str],
+        device: str = "cuda",
+        alpha: float = 0.1,
+        scaling_rule: str = "triangular",
+        **kwargs,
+    ):
+        super().__init__(model, layer_names, device=device, **kwargs)
+        self.alpha = alpha
+        self.scaling_rule = scaling_rule
+
+    _cache = None  # statistics do not depend on alpha
+
+    def _extract_values(self, layer_names: List[str], loader: DataLoader) -> Dict:
+        key = (self.model, loader, tuple(layer_names))
+        cache = EGEMFullRefiner._cache
+        if cache is not None and all(a is b or a == b for a, b in zip(cache[0], key)):
+            return cache[1]
+        names = [n for group in layer_names for n in group.split("+")]
+        layers = layer_names_to_layers(self.model, names)
+        stored = {}
+
+        def hook(module, inputs, output):
+            output.retain_grad()
+            stored[module] = (inputs[0].detach(), output)
+
+        handles = [layer.register_forward_hook(hook) for layer in layers]
+        ad = [0.0] * len(layers)  # sum over samples of a_i^2 d_j^2, [in, out]
+        dd = [0.0] * len(layers)  # sum over samples of d_j^2, [out]
+        for x, y in loader:
+            x, y = x.to(self.device), y.to(self.device).long()
+            out = self.model(x)
+            self.model.zero_grad()
+            out.gather(1, y[:, None]).sum().backward()
+            for l_i, layer in enumerate(layers):
+                a, z = stored[layer]
+                d = z.grad.detach()
+                if a.dim() == 4:
+                    a, d = a.sum(dim=[-2, -1]), d.sum(dim=[-2, -1])
+                ad[l_i] = ad[l_i] + (a ** 2).T @ (d ** 2)
+                dd[l_i] = dd[l_i] + (d ** 2).sum(0)
+        for h in handles:
+            h.remove()
+        values = {"ad": dict(zip(names, ad)), "dd": dict(zip(names, dd))}
+        EGEMFullRefiner._cache = (key, values)
+        return values
+
+    def _train_refinement_unit(self, layer_names: List[str], ad: Dict, dd: Dict):
+        for l_i, group in enumerate(layer_names):
+            names = group.split("+")
+            frac = l_i / max(len(layer_names) - 1, 1)
+            threshold = {"triangular": 1 - (1 - self.alpha) * frac,
+                         "inverse-triangular": self.alpha + (1 - self.alpha) * frac,
+                         "flat": self.alpha}[self.scaling_rule]
+
+            def multipliers(lbd):
+                cs = {n: ad[n] / (ad[n] + lbd * dd[n][None]) for n in names}
+                return {n: torch.where(dd[n][None] == 0, torch.ones_like(c), c)  # outputs the class does not use
+                        for n, c in cs.items()}
+
+            lbd, avg_c = 0.000001 / 2.0, 1.0
+            while avg_c >= threshold:
+                lbd *= 2.0
+                cs = multipliers(lbd)
+                avg_c = float(torch.cat([c.flatten() for c in cs.values()]).mean())
+            print(f"Layer {group} alpha: {self.alpha} lbd: {lbd:.5f} avg_c: {avg_c:.7f}")
+            for n, c in cs.items():
+                w = get_module_by_name(self.model, n).weight.data
+                c = c.T  # [out, in]
+                self.mods[n] = w * (c[..., None, None] if w.dim() == 4 else c)
+
+    def switch_weights(self):
+        for layer_name, w in self.mods.items():
+            layer = get_module_by_name(self.model, layer_name)
+            layer.weight.data, self.mods[layer_name] = w, layer.weight.data
+
+    def refine(self):
+        if not self.is_refined:
+            super().refine()
+            self.switch_weights()
+
+    def unrefine(self):
+        if self.is_refined:
+            super().unrefine()
+            self.switch_weights()
+
+    def get_filename(self) -> str:
+        return f"egemfull_a{self.alpha}_{self.scaling_rule}.pkl"
+
+
 class PCATruncRefiner(StaticRefiner):
     def __init__(
         self,
