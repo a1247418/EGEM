@@ -396,7 +396,8 @@ class EGEMFullRefiner(StaticRefiner):
     scaled by E[a_i^2 d_j^2] / (E[a_i^2 d_j^2] + lambda E[d_j^2]), with d_j = dy/dz_j for the true class y
     (Gradient x Input, or LRP with lrp=True). Conv activations and d are summed over space. lambda is set per
     layer as in EGEM; layers joined by "+" (e.g. a block's conv and its shortcut conv) share one threshold.
-    do_pca: the rule is applied to the weights in the (uncentered) PCA basis of the layer inputs."""
+    do_pca: the rule is applied to the weights in the (uncentered) PCA basis of the layer inputs.
+    d_energy: for conv layers use sum_q d_j(q)^2 instead of (sum_q d_j(q))^2, so that signed d do not cancel."""
 
     def __init__(
         self,
@@ -407,6 +408,7 @@ class EGEMFullRefiner(StaticRefiner):
         scaling_rule: str = "triangular",
         lrp: bool = False,
         do_pca: bool = False,
+        d_energy: bool = False,
         explainer: Optional[Explainer] = None,
         **kwargs,
     ):
@@ -415,13 +417,14 @@ class EGEMFullRefiner(StaticRefiner):
         self.scaling_rule = scaling_rule
         self.lrp = lrp
         self.do_pca = do_pca
+        self.d_energy = d_energy
         self.explainer = explainer
         assert not lrp or explainer is not None
 
     _cache = None  # statistics do not depend on alpha
 
     def _extract_values(self, layer_names: List[str], loader: DataLoader) -> Dict:
-        key = (self.model, loader, tuple(layer_names), self.lrp, self.do_pca)
+        key = (self.model, loader, tuple(layer_names), self.lrp, self.do_pca, self.d_energy)
         cache = EGEMFullRefiner._cache
         if cache is not None and all(a is b or a == b for a, b in zip(cache[0], key)):
             return cache[1]
@@ -434,7 +437,7 @@ class EGEMFullRefiner(StaticRefiner):
             stored[module] = (inputs[0].detach(), output)
 
         A = {n: [] for n in names}  # inputs, per sample (summed over space)
-        D = {n: [] for n in names}  # d, per sample (summed over space)
+        D = {n: [] for n in names}  # d^2, per sample (summed over space)
         context = self.explainer.attributor if self.lrp else contextlib.nullcontext()
         with context:  # LRP: the backward pass follows the explainer's rules
             handles = [layer.register_forward_hook(hook) for layer in layers]
@@ -448,21 +451,24 @@ class EGEMFullRefiner(StaticRefiner):
                         a, z = stored[layer]
                         d = z.grad.detach()
                         if a.dim() == 4:
-                            a, d = a.sum(dim=[-2, -1]), d.sum(dim=[-2, -1])
+                            a = a.sum(dim=[-2, -1])
+                            d2 = (d ** 2).sum(dim=[-2, -1]) if self.d_energy else d.sum(dim=[-2, -1]) ** 2
+                        else:
+                            d2 = d ** 2
                         A[n].append(a)
-                        D[n].append(d)
+                        D[n].append(d2)
             for h in handles:
                 h.remove()
         values = {"ad": {}, "dd": {}, "V": {}}
         for n in names:
-            a, d = torch.cat(A[n]).double(), torch.cat(D[n]).double()
+            a, d2 = torch.cat(A[n]).double(), torch.cat(D[n]).double()
             if self.do_pca:
                 _, _, Vh = torch.linalg.svd(a, full_matrices=False)  # rows: principal directions of E[a a^T]
                 a = a @ Vh.T
                 values["V"][n] = Vh.float()
-            a, d = a.float(), d.float()
-            values["ad"][n] = (a ** 2).T @ (d ** 2)  # [in, out]
-            values["dd"][n] = (d ** 2).sum(0)  # [out]
+            a, d2 = a.float(), d2.float()
+            values["ad"][n] = (a ** 2).T @ d2  # [in, out]
+            values["dd"][n] = d2.sum(0)  # [out]
         EGEMFullRefiner._cache = (key, values)
         return values
 
@@ -512,7 +518,7 @@ class EGEMFullRefiner(StaticRefiner):
             self.switch_weights()
 
     def get_filename(self) -> str:
-        return f"egemfull_a{self.alpha}_{self.scaling_rule}_lrp{self.lrp}_pca{self.do_pca}.pkl"
+        return f"egemfull_a{self.alpha}_{self.scaling_rule}_lrp{self.lrp}_pca{self.do_pca}_en{self.d_energy}.pkl"
 
 
 class PCATruncRefiner(StaticRefiner):
