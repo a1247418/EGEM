@@ -9,6 +9,8 @@ import numpy as np
 REFINEMENT_HP = {
     "egem": ("alpha", True),
     "egemfull": ("alpha", True),
+    "egemfull-lrp": ("alpha", True),
+    "pcaegemfull": ("alpha", True),
     "pcaegem": ("alpha", True),
     "ridge": ("lmbda", False),
     "rgem": ("lmbda", False),

@@ -1,3 +1,4 @@
+import contextlib
 import os
 import copy
 from typing import Optional, List, Dict, Tuple
@@ -392,9 +393,10 @@ class EGEMRefiner(StaticRefiner):
 
 class EGEMFullRefiner(StaticRefiner):
     """EGEM without assuming independence of a_i and d_j (Eq. 4 of the paper): every weight w_ij of a layer is
-    scaled by E[a_i^2 d_j^2] / (E[a_i^2 d_j^2] + lambda E[d_j^2]), with d_j = dy/dz_j (Gradient x Input) for the
-    true class y. Conv activations and gradients are summed over space. lambda is set per layer as in EGEM;
-    layers joined by "+" (e.g. a block's conv and its shortcut conv) share one threshold and lambda."""
+    scaled by E[a_i^2 d_j^2] / (E[a_i^2 d_j^2] + lambda E[d_j^2]), with d_j = dy/dz_j for the true class y
+    (Gradient x Input, or LRP with lrp=True). Conv activations and d are summed over space. lambda is set per
+    layer as in EGEM; layers joined by "+" (e.g. a block's conv and its shortcut conv) share one threshold.
+    do_pca: the rule is applied to the weights in the (uncentered) PCA basis of the layer inputs."""
 
     def __init__(
         self,
@@ -403,16 +405,23 @@ class EGEMFullRefiner(StaticRefiner):
         device: str = "cuda",
         alpha: float = 0.1,
         scaling_rule: str = "triangular",
+        lrp: bool = False,
+        do_pca: bool = False,
+        explainer: Optional[Explainer] = None,
         **kwargs,
     ):
         super().__init__(model, layer_names, device=device, **kwargs)
         self.alpha = alpha
         self.scaling_rule = scaling_rule
+        self.lrp = lrp
+        self.do_pca = do_pca
+        self.explainer = explainer
+        assert not lrp or explainer is not None
 
     _cache = None  # statistics do not depend on alpha
 
     def _extract_values(self, layer_names: List[str], loader: DataLoader) -> Dict:
-        key = (self.model, loader, tuple(layer_names))
+        key = (self.model, loader, tuple(layer_names), self.lrp, self.do_pca)
         cache = EGEMFullRefiner._cache
         if cache is not None and all(a is b or a == b for a, b in zip(cache[0], key)):
             return cache[1]
@@ -424,28 +433,39 @@ class EGEMFullRefiner(StaticRefiner):
             output.retain_grad()
             stored[module] = (inputs[0].detach(), output)
 
-        handles = [layer.register_forward_hook(hook) for layer in layers]
-        ad = [0.0] * len(layers)  # sum over samples of a_i^2 d_j^2, [in, out]
-        dd = [0.0] * len(layers)  # sum over samples of d_j^2, [out]
-        for x, y in loader:
-            x, y = x.to(self.device), y.to(self.device).long()
-            out = self.model(x)
-            self.model.zero_grad()
-            out.gather(1, y[:, None]).sum().backward()
-            for l_i, layer in enumerate(layers):
-                a, z = stored[layer]
-                d = z.grad.detach()
-                if a.dim() == 4:
-                    a, d = a.sum(dim=[-2, -1]), d.sum(dim=[-2, -1])
-                ad[l_i] = ad[l_i] + (a ** 2).T @ (d ** 2)
-                dd[l_i] = dd[l_i] + (d ** 2).sum(0)
-        for h in handles:
-            h.remove()
-        values = {"ad": dict(zip(names, ad)), "dd": dict(zip(names, dd))}
+        A = {n: [] for n in names}  # inputs, per sample (summed over space)
+        D = {n: [] for n in names}  # d, per sample (summed over space)
+        context = self.explainer.attributor if self.lrp else contextlib.nullcontext()
+        with context:  # LRP: the backward pass follows the explainer's rules
+            handles = [layer.register_forward_hook(hook) for layer in layers]
+            for x, y in loader:
+                x, y = x.to(self.device).requires_grad_(True), y.to(self.device).long()
+                out = self.model(x)
+                self.model.zero_grad()
+                out.gather(1, y[:, None]).sum().backward()
+                for n, layer in zip(names, layers):
+                    a, z = stored[layer]
+                    d = z.grad.detach()
+                    if a.dim() == 4:
+                        a, d = a.sum(dim=[-2, -1]), d.sum(dim=[-2, -1])
+                    A[n].append(a)
+                    D[n].append(d)
+            for h in handles:
+                h.remove()
+        values = {"ad": {}, "dd": {}, "V": {}}
+        for n in names:
+            a, d = torch.cat(A[n]).double(), torch.cat(D[n]).double()
+            if self.do_pca:
+                _, _, Vh = torch.linalg.svd(a, full_matrices=False)  # rows: principal directions of E[a a^T]
+                a = a @ Vh.T
+                values["V"][n] = Vh.float()
+            a, d = a.float(), d.float()
+            values["ad"][n] = (a ** 2).T @ (d ** 2)  # [in, out]
+            values["dd"][n] = (d ** 2).sum(0)  # [out]
         EGEMFullRefiner._cache = (key, values)
         return values
 
-    def _train_refinement_unit(self, layer_names: List[str], ad: Dict, dd: Dict):
+    def _train_refinement_unit(self, layer_names: List[str], ad: Dict, dd: Dict, V: Dict):
         for l_i, group in enumerate(layer_names):
             names = group.split("+")
             frac = l_i / max(len(layer_names) - 1, 1)
@@ -467,7 +487,13 @@ class EGEMFullRefiner(StaticRefiner):
             for n, c in cs.items():
                 w = get_module_by_name(self.model, n).weight.data
                 c = c.T  # [out, in]
-                self.mods[n] = w * (c[..., None, None] if w.dim() == 4 else c)
+                if w.dim() == 4:
+                    w = w.permute(2, 3, 0, 1)  # [kh, kw, out, in]
+                if self.do_pca:
+                    w = ((w @ V[n].T) * c) @ V[n]  # prune in the PCA basis, rotate back
+                else:
+                    w = w * c
+                self.mods[n] = w.permute(2, 3, 0, 1) if w.dim() == 4 else w
 
     def switch_weights(self):
         for layer_name, w in self.mods.items():
@@ -485,7 +511,7 @@ class EGEMFullRefiner(StaticRefiner):
             self.switch_weights()
 
     def get_filename(self) -> str:
-        return f"egemfull_a{self.alpha}_{self.scaling_rule}.pkl"
+        return f"egemfull_a{self.alpha}_{self.scaling_rule}_lrp{self.lrp}_pca{self.do_pca}.pkl"
 
 
 class PCATruncRefiner(StaticRefiner):

@@ -38,7 +38,7 @@ def parseargs():
         "--refinement",
         type=str,
         default="none",
-        choices=["none", "egem", "egemfull", "pcaegem", "ridge", "rgem", "retrain", "pcatrunc", "wegem", "pegem", "pep"],
+        choices=["none", "egem", "egemfull", "egemfull-lrp", "pcaegemfull", "pcaegem", "ridge", "rgem", "retrain", "pcatrunc", "wegem", "pegem", "pep"],
     )
     aa("--scenario_name", type=str)
     aa("--data_root", type=str)
@@ -70,6 +70,10 @@ def get_refiner_class(refinement_name: str):
         return EGEMRefiner
     elif refinement_name == "egemfull":
         return EGEMFullRefiner
+    elif refinement_name == "egemfull-lrp":
+        return partial(EGEMFullRefiner, lrp=True)
+    elif refinement_name == "pcaegemfull":
+        return partial(EGEMFullRefiner, do_pca=True)
     elif refinement_name == "pcaegem":
         return partial(EGEMRefiner, do_pca=True)
     elif refinement_name == "pegem":
