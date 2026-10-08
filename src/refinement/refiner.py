@@ -438,18 +438,19 @@ class EGEMFullRefiner(StaticRefiner):
         context = self.explainer.attributor if self.lrp else contextlib.nullcontext()
         with context:  # LRP: the backward pass follows the explainer's rules
             handles = [layer.register_forward_hook(hook) for layer in layers]
-            for x, y in loader:
-                x, y = x.to(self.device).requires_grad_(True), y.to(self.device).long()
-                out = self.model(x)
-                self.model.zero_grad()
-                out.gather(1, y[:, None]).sum().backward()
-                for n, layer in zip(names, layers):
-                    a, z = stored[layer]
-                    d = z.grad.detach()
-                    if a.dim() == 4:
-                        a, d = a.sum(dim=[-2, -1]), d.sum(dim=[-2, -1])
-                    A[n].append(a)
-                    D[n].append(d)
+            for xb, yb in loader:
+                for x, y in zip(xb.split(32), yb.split(32)):  # bounds the memory of the (LRP) backward pass
+                    x, y = x.to(self.device).requires_grad_(True), y.to(self.device).long()
+                    out = self.model(x)
+                    self.model.zero_grad()
+                    out.gather(1, y[:, None]).sum().backward()
+                    for n, layer in zip(names, layers):
+                        a, z = stored[layer]
+                        d = z.grad.detach()
+                        if a.dim() == 4:
+                            a, d = a.sum(dim=[-2, -1]), d.sum(dim=[-2, -1])
+                        A[n].append(a)
+                        D[n].append(d)
             for h in handles:
                 h.remove()
         values = {"ad": {}, "dd": {}, "V": {}}
