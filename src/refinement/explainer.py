@@ -66,11 +66,11 @@ class Explainer:
                 composite = EpsilonPlus(canonizers=canonizers, zero_params=zero_params)
             elif explanation_type == "epsilon_gamma_box":
                 composite = EpsilonGammaBox(low=low, high=high, canonizers=canonizers, zero_params=zero_params)
-            elif explanation_type == "gamma":  # epsilon / gamma / box with a stable epsilon
+            elif explanation_type == "gamma":
                 composite = EpsilonGammaBox(low=low, high=high, epsilon=0.25, stabilizer=0.25, canonizers=canonizers,
                                             zero_params=zero_params)
             elif explanation_type == "epsilon":
-                rule = Epsilon(epsilon=0.25, zero_params=zero_params)  # a larger epsilon keeps deep nets stable
+                rule = Epsilon(epsilon=0.25, zero_params=zero_params)
                 composite = LayerMapComposite(
                     layer_map=layer_map_base() + [(Convolution, rule), (Linear, rule)], canonizers=canonizers)
             elif explanation_type == "epsilon_plus_flat":

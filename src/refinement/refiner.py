@@ -392,12 +392,9 @@ class EGEMRefiner(StaticRefiner):
 
 
 class EGEMFullRefiner(StaticRefiner):
-    """EGEM without assuming independence of a_i and d_j (Eq. 4 of the paper): every weight w_ij of a layer is
-    scaled by E[a_i^2 d_j^2] / (E[a_i^2 d_j^2] + lambda E[d_j^2]), with d_j = dy/dz_j for the true class y
-    (Gradient x Input, or LRP with lrp=True). Conv activations and d are summed over space. lambda is set per
-    layer as in EGEM; layers joined by "+" (e.g. a block's conv and its shortcut conv) share one threshold.
-    do_pca: the rule is applied to the weights in the (uncentered) PCA basis of the layer inputs.
-    d_energy: for conv layers use sum_q d_j(q)^2 instead of (sum_q d_j(q))^2, so that signed d do not cancel."""
+    """EGEM without the independence assumption (Eq. 4 of the paper): w_ij is scaled by
+    E[a_i^2 d_j^2] / (E[a_i^2 d_j^2] + lambda E[d_j^2]), d_j = dy/dz_j for the true class (gradient or LRP).
+    Layers joined by "+" share one threshold."""
 
     def __init__(
         self,
@@ -421,7 +418,7 @@ class EGEMFullRefiner(StaticRefiner):
         self.explainer = explainer
         assert not lrp or explainer is not None
 
-    _cache = None  # statistics do not depend on alpha
+    _cache = None
 
     def _extract_values(self, layer_names: List[str], loader: DataLoader) -> Dict:
         key = (self.model, loader, tuple(layer_names), self.lrp, self.do_pca, self.d_energy)
@@ -436,13 +433,13 @@ class EGEMFullRefiner(StaticRefiner):
             output.retain_grad()
             stored[module] = (inputs[0].detach(), output)
 
-        A = {n: [] for n in names}  # inputs, per sample (summed over space)
-        D = {n: [] for n in names}  # d^2, per sample (summed over space)
+        A = {n: [] for n in names}
+        D = {n: [] for n in names}
         context = self.explainer.attributor if self.lrp else contextlib.nullcontext()
-        with context:  # LRP: the backward pass follows the explainer's rules
+        with context:
             handles = [layer.register_forward_hook(hook) for layer in layers]
             for xb, yb in loader:
-                for x, y in zip(xb.split(32), yb.split(32)):  # bounds the memory of the (LRP) backward pass
+                for x, y in zip(xb.split(32), yb.split(32)):
                     x, y = x.to(self.device).requires_grad_(True), y.to(self.device).long()
                     out = self.model(x)
                     self.model.zero_grad()
@@ -463,12 +460,12 @@ class EGEMFullRefiner(StaticRefiner):
         for n in names:
             a, d2 = torch.cat(A[n]).double(), torch.cat(D[n]).double()
             if self.do_pca:
-                _, _, Vh = torch.linalg.svd(a, full_matrices=False)  # rows: principal directions of E[a a^T]
+                _, _, Vh = torch.linalg.svd(a, full_matrices=False)
                 a = a @ Vh.T
                 values["V"][n] = Vh.float()
             a, d2 = a.float(), d2.float()
             values["ad"][n] = (a ** 2).T @ d2  # [in, out]
-            values["dd"][n] = d2.sum(0)  # [out]
+            values["dd"][n] = d2.sum(0)
         EGEMFullRefiner._cache = (key, values)
         return values
 
@@ -482,7 +479,7 @@ class EGEMFullRefiner(StaticRefiner):
 
             def multipliers(lbd):
                 cs = {n: ad[n] / (ad[n] + lbd * dd[n][None]) for n in names}
-                return {n: torch.where(dd[n][None] == 0, torch.ones_like(c), c)  # outputs the class does not use
+                return {n: torch.where(dd[n][None] == 0, torch.ones_like(c), c)
                         for n, c in cs.items()}
 
             lbd, avg_c = 0.000001 / 2.0, 1.0
@@ -497,7 +494,7 @@ class EGEMFullRefiner(StaticRefiner):
                 if w.dim() == 4:
                     w = w.permute(2, 3, 0, 1)  # [kh, kw, out, in]
                 if self.do_pca:
-                    w = ((w @ V[n].T) * c) @ V[n]  # prune in the PCA basis, rotate back
+                    w = ((w @ V[n].T) * c) @ V[n]
                 else:
                     w = w * c
                 self.mods[n] = w.permute(2, 3, 0, 1) if w.dim() == 4 else w
