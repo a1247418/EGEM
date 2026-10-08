@@ -4,8 +4,8 @@ from functools import partial
 from zennit.attribution import Gradient, SmoothGrad
 from zennit.composites import EpsilonPlusFlat, EpsilonGammaBox, EpsilonPlus, LayerMapComposite, EpsilonAlpha2Beta1Flat, layer_map_base
 from zennit.torchvision import VGGCanonizer, ResNetCanonizer
-from zennit.types import Convolution
-from zennit.rules import AlphaBeta
+from zennit.types import Convolution, Linear
+from zennit.rules import AlphaBeta, Epsilon
 from zennit.core import Composite
 
 from refinement.lrp_resnet import module_map_resnet
@@ -66,6 +66,10 @@ class Explainer:
                 composite = EpsilonPlus(canonizers=canonizers, zero_params=zero_params)
             elif explanation_type == "epsilon_gamma_box":
                 composite = EpsilonGammaBox(low=low, high=high, canonizers=canonizers, zero_params=zero_params)
+            elif explanation_type == "epsilon":
+                rule = Epsilon(zero_params=zero_params)
+                composite = LayerMapComposite(
+                    layer_map=layer_map_base() + [(Convolution, rule), (Linear, rule)], canonizers=canonizers)
             elif explanation_type == "epsilon_plus_flat":
                 composite = EpsilonPlusFlat(canonizers=canonizers, zero_params=zero_params)
             elif explanation_type == "alpha1_beta0":
