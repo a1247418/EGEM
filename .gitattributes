@@ -1,0 +1,2 @@
+# Leave Jupyter notebooks out of the GitHub language statistics
+*.ipynb linguist-vendored
